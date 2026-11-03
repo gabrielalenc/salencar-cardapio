@@ -1,6 +1,7 @@
 import React from 'react';
-import { MapPin, Clock, Phone, Navigation, ExternalLink, Compass, Eye } from 'lucide-react';
+import { MapPin, Clock, Phone, Navigation, ExternalLink, Eye } from 'lucide-react';
 import { STORE_CONFIG } from '../config/storeConfig';
+import { AnimatedText } from './AnimatedText';
 
 function InstagramIcon({ className = "w-4 h-4" }) {
   return (
@@ -20,35 +21,22 @@ export function LocationContactSection() {
   return (
     <section id="localizacao" className="py-12 sm:py-16 bg-surface-50 border-t border-stone-200/80">
       <div className="max-w-6xl mx-auto px-4">
-        <div className="text-center max-w-xl mx-auto mb-8 sm:mb-10">
+        <div className="text-center max-w-xl mx-auto mb-8 sm:mb-10 reveal-item">
           <span className="text-xs font-black text-primary uppercase tracking-widest block mb-1">
             Localização & Contato
           </span>
           <h2 className="font-display font-black text-2xl sm:text-3xl text-stone-900 tracking-tight">
-            Venha nos visitar ou faça seu pedido
+            <AnimatedText>Venha nos visitar ou faça seu pedido</AnimatedText>
           </h2>
           <p className="text-xs sm:text-sm text-stone-500 mt-1">
-            Veja a fachada e o local no Street View, trace sua rota ou solicite entrega rápida.
+            <AnimatedText>Veja a fachada e o local no Street View, trace sua rota ou solicite entrega rápida.</AnimatedText>
           </p>
         </div>
 
         <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 lg:gap-8 items-stretch">
-          <div className="lg:col-span-7 flex flex-col">
+          <div className="lg:col-span-7 flex flex-col reveal-item">
             <div className="bg-white rounded-2xl border border-stone-200/90 shadow-card overflow-hidden flex-1 flex flex-col">
-              <div className="px-4 py-2.5 bg-stone-900 text-white flex items-center justify-between text-xs">
-                <div className="flex items-center gap-2">
-                  <span className="w-2.5 h-2.5 rounded-full bg-amber-400"></span>
-                  <span className="font-bold tracking-wide flex items-center gap-1.5">
-                    <Compass className="w-3.5 h-3.5 text-amber-400" />
-                    Google Street View • Visão da Rua
-                  </span>
-                </div>
-                <span className="text-[11px] text-stone-400 font-mono hidden sm:inline">
-                  360° Panorama
-                </span>
-              </div>
-
-              <div className="relative w-full aspect-[4/3] sm:aspect-[16/10] bg-stone-900 overflow-hidden flex-1 group">
+              <div className="relative w-full aspect-[4/3] sm:aspect-[16/10] bg-transparent overflow-hidden flex-1 group">
                 <iframe
                   title="Google Street View - Rua do Estabelecimento Salencar"
                   src={`https://maps.google.com/maps?q=${encodeURIComponent(STORE_CONFIG.pickupAddress)}&t=m&z=17&ie=UTF8&iwloc=&output=embed`}
@@ -59,7 +47,7 @@ export function LocationContactSection() {
 
                 <div className="absolute top-3 left-3 bg-stone-900/90 backdrop-blur-md text-white px-3 py-1.5 rounded-xl border border-white/20 shadow-lg text-xs pointer-events-none">
                   <div className="font-bold flex items-center gap-1.5">
-                    <MapPin className="w-3.5 h-3.5 text-emerald-400" />
+                    <MapPin className="w-3.5 h-3.5 text-accent" />
                     <span>{STORE_CONFIG.pickupAddress}</span>
                   </div>
                   <span className="text-[10px] text-stone-300 block">Fachada & Acesso Salencar</span>
@@ -86,8 +74,8 @@ export function LocationContactSection() {
             </div>
           </div>
 
-          <div className="lg:col-span-5 flex flex-col justify-between space-y-4">
-            <div className="bg-white rounded-2xl p-5 sm:p-6 border border-stone-200/90 shadow-card">
+          <div className="lg:col-span-5 flex flex-col justify-between space-y-4 reveal-item">
+            <div className="reveal-item bg-white rounded-2xl p-5 sm:p-6 border border-stone-200/90 shadow-card">
               <div className="flex items-start gap-3.5">
                 <div className="w-11 h-11 rounded-2xl bg-primary-light text-primary flex items-center justify-center shrink-0 mt-0.5">
                   <MapPin className="w-5 h-5 stroke-[2]" />
@@ -119,13 +107,13 @@ export function LocationContactSection() {
               </div>
             </div>
 
-            <div className="bg-white rounded-2xl p-5 border border-stone-200/90 shadow-card">
+            <div className="reveal-item bg-white rounded-2xl p-5 border border-stone-200/90 shadow-card">
               <div className="flex items-start gap-3.5">
-                <div className="w-10 h-10 rounded-2xl bg-amber-50 text-amber-700 flex items-center justify-center shrink-0">
+                <div className="w-10 h-10 rounded-2xl bg-accent-light text-accent-hover flex items-center justify-center shrink-0">
                   <Clock className="w-5 h-5 stroke-[2]" />
                 </div>
                 <div>
-                  <span className="text-[11px] font-bold text-amber-800 uppercase tracking-wider block">
+                  <span className="text-[11px] font-bold text-accent-hover uppercase tracking-wider block">
                     Horário de Funcionamento
                   </span>
                   <p className="text-xs sm:text-sm font-bold text-stone-900 mt-0.5">
@@ -138,14 +126,14 @@ export function LocationContactSection() {
               </div>
             </div>
 
-            <div className="bg-white rounded-2xl p-5 border border-stone-200/90 shadow-card">
+            <div className="reveal-item bg-white rounded-2xl p-5 border border-stone-200/90 shadow-card">
               <div className="flex items-center justify-between gap-3">
                 <div className="flex items-center gap-3">
-                  <div className="w-10 h-10 rounded-2xl bg-emerald-50 text-emerald-700 flex items-center justify-center shrink-0">
+                  <div className="w-10 h-10 rounded-2xl bg-primary-light text-primary flex items-center justify-center shrink-0">
                     <Phone className="w-5 h-5 stroke-[2]" />
                   </div>
                   <div>
-                    <span className="text-[11px] font-bold text-emerald-800 uppercase tracking-wider block">
+                    <span className="text-[11px] font-bold text-primary uppercase tracking-wider block">
                       WhatsApp Comercial
                     </span>
                     <span className="text-xs sm:text-sm font-bold text-stone-900">

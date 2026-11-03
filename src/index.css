@@ -10,6 +10,8 @@
   
   body {
     font-feature-settings: "cv02", "cv03", "cv04", "cv11";
+    background: #FFF7ED;
+    color: #30252A;
   }
 }
 
@@ -19,14 +21,14 @@
   height: 6px;
 }
 ::-webkit-scrollbar-track {
-  background: #f1ede4;
+  background: #FFF7ED;
 }
 ::-webkit-scrollbar-thumb {
-  background: #cbd5e1;
+  background: #D8C7B8;
   border-radius: 9999px;
 }
 ::-webkit-scrollbar-thumb:hover {
-  background: #94a3b8;
+  background: #B99E8D;
 }
 
 /* Hide scrollbar for category pills on mobile */
@@ -45,5 +47,55 @@
 
 .animate-pulse-subtle {
   animation: pulseSubtle 2.5s infinite ease-in-out;
+}
+
+@keyframes wordFadeUp {
+  from { opacity: 0; transform: translate3d(0, 9px, 0); }
+  to { opacity: 1; transform: translate3d(0, 0, 0); }
+}
+
+@keyframes revealFadeUp {
+  from { opacity: 0; transform: translate3d(0, 22px, 0); }
+  to { opacity: 1; transform: translate3d(0, 0, 0); }
+}
+
+.animated-word {
+  display: inline-block;
+}
+
+.reveal-visible .animated-word {
+  animation: wordFadeUp 560ms cubic-bezier(0.2, 0.7, 0.25, 1) both;
+}
+
+.reveal-item {
+  transition: box-shadow 220ms ease, border-color 220ms ease;
+}
+
+.reveal-pending {
+  opacity: 0;
+  transform: translateY(16px);
+}
+
+.reveal-visible {
+  animation: revealFadeUp 680ms cubic-bezier(0.2, 0.7, 0.25, 1) both;
+  animation-delay: var(--reveal-delay, 0ms);
+}
+
+.grid > .reveal-item:nth-child(4n + 2) { --reveal-delay: 75ms; }
+.grid > .reveal-item:nth-child(4n + 3) { --reveal-delay: 130ms; }
+.grid > .reveal-item:nth-child(4n + 4) { --reveal-delay: 185ms; }
+
+.reveal-item:not(.reveal-pending) {
+  will-change: auto;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  html { scroll-behavior: auto; }
+  *, *::before, *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    scroll-behavior: auto !important;
+    transition-duration: 0.01ms !important;
+  }
 }
 

@@ -1,4 +1,4 @@
-import React, { useState, useMemo, useRef } from 'react';
+import React, { useState, useMemo, useRef, useEffect } from 'react';
 import { CartProvider, useCart } from './context/CartContext';
 import { Header } from './components/Header';
 import { HeroBanner } from './components/HeroBanner';
@@ -13,6 +13,7 @@ import { MobileFloatingCart } from './components/MobileFloatingCart';
 import { Footer } from './components/Footer';
 import { PRODUCTS, CATEGORIES } from './data/products';
 import { CheckCircle2, Search, X } from 'lucide-react';
+import { AnimatedText } from './components/AnimatedText';
 
 function DeliveryApp() {
   const [activeCategory, setActiveCategory] = useState('todos');
@@ -53,8 +54,55 @@ function DeliveryApp() {
     });
   }, [activeCategory, searchTerm]);
 
+  useEffect(() => {
+    if (!('IntersectionObserver' in window) || window.matchMedia('(prefers-reduced-motion: reduce)').matches) return undefined;
+
+    let observer;
+    let mutationObserver;
+    try {
+      observer = new IntersectionObserver((entries) => {
+        entries.forEach((entry) => {
+          if (entry.isIntersecting) {
+            entry.target.classList.remove('reveal-pending');
+            entry.target.classList.add('reveal-visible');
+            observer.unobserve(entry.target);
+          }
+        });
+      }, { threshold: 0.08, rootMargin: '0px 0px -24px 0px' });
+
+      const register = (element) => {
+        if (!(element instanceof Element)) return;
+        if (element.matches('.reveal-item') && !element.classList.contains('reveal-visible') && !element.classList.contains('reveal-pending')) {
+          element.classList.add('reveal-pending');
+          try {
+            observer.observe(element);
+          } catch {
+            element.classList.remove('reveal-pending');
+          }
+        }
+        element.querySelectorAll('.reveal-item:not(.reveal-visible):not(.reveal-pending)').forEach(register);
+      };
+
+      document.querySelectorAll('.reveal-item:not(.reveal-visible)').forEach((element) => {
+        register(element);
+      });
+      mutationObserver = new MutationObserver((records) => {
+        records.forEach((record) => record.addedNodes.forEach(register));
+      });
+      mutationObserver.observe(document.body, { childList: true, subtree: true });
+    } catch {
+      document.querySelectorAll('.reveal-pending').forEach((element) => element.classList.remove('reveal-pending'));
+    }
+
+    return () => {
+      observer?.disconnect();
+      mutationObserver?.disconnect();
+      document.querySelectorAll('.reveal-pending').forEach((element) => element.classList.remove('reveal-pending'));
+    };
+  }, []);
+
   return (
-    <div className="min-h-screen flex flex-col bg-white text-stone-900 font-sans selection:bg-primary selection:text-white">
+    <div className="min-h-screen flex flex-col bg-surface-50 text-ink font-sans selection:bg-primary selection:text-white">
       {/* Cabeçalho */}
       <Header />
 
@@ -64,12 +112,12 @@ function DeliveryApp() {
       {/* Seção do Cardápio */}
       <section id="cardapio" ref={menuSectionRef} className="py-10 sm:py-16">
         
-        <div className="max-w-6xl mx-auto px-4 text-center mb-6">
+        <div className="max-w-6xl mx-auto px-4 text-center mb-6 reveal-item">
           <span className="text-xs font-black text-primary uppercase tracking-widest block mb-1">
             Cardápio
           </span>
           <h2 className="font-display font-black text-2xl sm:text-3xl text-stone-900 tracking-tight">
-            Conheça o nosso cardápio
+            <AnimatedText>Conheça o nosso cardápio</AnimatedText>
           </h2>
         </div>
 
@@ -82,7 +130,7 @@ function DeliveryApp() {
 
         {/* Grid de Produtos */}
         <div className="max-w-6xl mx-auto px-4 pt-6 sm:pt-8">
-          <div className="mb-5 flex justify-center">
+          <div className="mb-5 flex justify-center reveal-item">
             <div className="relative w-full max-w-2xl">
               <Search className="pointer-events-none absolute left-4 top-1/2 h-5 w-5 -translate-y-1/2 text-stone-400" />
               <input
@@ -115,7 +163,7 @@ function DeliveryApp() {
           )}
 
           {filteredProducts.length === 0 ? (
-            <div className="bg-surface-50 rounded-2xl p-8 sm:p-12 text-center border border-stone-200 max-w-md mx-auto my-6">
+            <div className="reveal-item bg-surface-50 rounded-2xl p-8 sm:p-12 text-center border border-stone-200 max-w-md mx-auto my-6">
               <div className="w-12 h-12 rounded-full bg-stone-100 text-stone-400 flex items-center justify-center mx-auto mb-3">
                 <Search className="w-6 h-6 stroke-[1.5]" />
               </div>
@@ -176,9 +224,9 @@ function DeliveryApp() {
         <div
           role="status"
           aria-live="polite"
-          className="fixed left-4 right-4 top-4 z-[70] flex items-center gap-3 rounded-xl border border-emerald-100 bg-white px-4 py-3 text-sm text-stone-800 shadow-lg sm:left-auto sm:right-6 sm:top-6 sm:max-w-sm"
+          className="fixed left-4 right-4 top-4 z-[70] flex items-center gap-3 rounded-xl border border-primary/20 bg-surface-50 px-4 py-3 text-sm text-stone-800 shadow-lg sm:left-auto sm:right-6 sm:top-6 sm:max-w-sm"
         >
-          <CheckCircle2 className="h-5 w-5 shrink-0 text-emerald-600" />
+          <CheckCircle2 className="h-5 w-5 shrink-0 text-primary" />
           <span><strong className="font-semibold">{addedProductName}</strong> adicionado à sacola.</span>
         </div>
       )}

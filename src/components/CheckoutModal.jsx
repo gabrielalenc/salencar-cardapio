@@ -187,7 +187,7 @@ export function CheckoutModal({ onOrderSuccess }) {
                   <div className="flex items-end"><button type="button" onClick={handleCEPBlur} disabled={loadingCEP} className="h-[42px] w-full rounded-lg border border-stone-200 px-3 text-sm font-medium text-stone-700 hover:bg-stone-50 disabled:opacity-50">Buscar CEP</button></div>
                   <div className="hidden sm:block" />
                 </div>
-                {cepError && <p className="text-xs text-amber-700">{cepError}</p>}
+                {cepError && <p className="text-xs text-accent-hover">{cepError}</p>}
                 <div className="grid gap-4 sm:grid-cols-3">
                   <div className="sm:col-span-2"><CheckoutField label="Rua *" field="street" value={formData.street} onChange={(value) => change('street', value)} error={formErrors.street} inputClass={inputClass('street')} autoComplete="address-line1" placeholder="Nome da rua" /></div>
                   <CheckoutField label="Número *" field="number" value={formData.number} onChange={(value) => change('number', value)} error={formErrors.number} inputClass={inputClass('number')} placeholder="Número" />

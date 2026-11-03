@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import { Plus, ShoppingCart } from 'lucide-react';
 import { formatCurrency } from '../utils/formatters';
+import { AnimatedText } from './AnimatedText';
 
 export function ProductCard({ product, onSelect, onAddToCart, onBuyNow }) {
   const [imageLoaded, setImageLoaded] = useState(false);
@@ -9,7 +10,7 @@ export function ProductCard({ product, onSelect, onAddToCart, onBuyNow }) {
   return (
     <div
       onClick={() => onSelect(product)}
-      className="bg-white rounded-2xl p-3 sm:p-3.5 border border-stone-200/80 hover:border-primary/40 shadow-subtle hover:shadow-card transition-all duration-200 flex flex-col justify-between cursor-pointer group"
+      className="reveal-item bg-white rounded-2xl p-3 sm:p-3.5 border border-stone-200/80 hover:border-primary/40 shadow-subtle hover:shadow-card transition-all duration-200 flex flex-col justify-between cursor-pointer group"
     >
       <div className="relative w-full aspect-[4/3] rounded-xl overflow-hidden bg-stone-100 border border-stone-100">
         <img
@@ -42,11 +43,11 @@ export function ProductCard({ product, onSelect, onAddToCart, onBuyNow }) {
       <div className="pt-3 pb-1 text-center flex-1 flex flex-col justify-between">
         <div>
           <h3 className="font-bold text-stone-900 text-sm sm:text-base group-hover:text-primary transition-colors leading-snug line-clamp-1">
-            {product.name}
+            <AnimatedText>{product.name}</AnimatedText>
           </h3>
 
           <p className="mt-1 text-xs text-stone-500 line-clamp-2 leading-relaxed">
-            {product.description}
+            <AnimatedText>{product.description}</AnimatedText>
           </p>
         </div>
 

@@ -8,14 +8,14 @@ function InstagramIcon({ className = 'h-4 w-4' }) {
 
 export function Footer() {
   return (
-    <footer id="contato" className="bg-stone-900 text-stone-300 pt-10 pb-20 md:pb-10 border-t border-stone-800">
+    <footer id="contato" className="reveal-item bg-primary-hover text-stone-200 pt-10 pb-20 md:pb-10 border-t border-primary">
       <div className="max-w-6xl mx-auto px-4">
-        <div className="grid grid-cols-1 md:grid-cols-4 gap-8 pb-8 border-b border-stone-800">
+        <div className="grid grid-cols-1 md:grid-cols-4 gap-8 pb-8 border-b border-primary">
           
           {/* Logo e Descrição */}
           <div className="md:col-span-2 space-y-3">
             <div className="flex items-center gap-3">
-              <div className="w-10 h-10 rounded-full overflow-hidden border border-stone-700 bg-stone-800">
+              <div className="w-10 h-10 rounded-full overflow-hidden border border-primary bg-primary">
                 <img
                   src="/images/logo.jpg"
                   alt="Salencar Batidas"
