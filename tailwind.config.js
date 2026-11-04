@@ -8,21 +8,29 @@ export default {
     extend: {
       colors: {
         primary: {
-          DEFAULT: '#114434', // Verde nobre Salencar
-          hover: '#0c3528',
-          light: '#f2f7f4',
-          subtle: '#e4efe9',
+          DEFAULT: '#70283F',
+          hover: '#592032',
+          light: '#F7E9EC',
+          subtle: '#F1DDE2',
         },
         accent: {
-          DEFAULT: '#c27e1f', // Ouro queimado / âmbar discreto
-          hover: '#a86c18',
-          light: '#fdf7ee',
+          DEFAULT: '#E9874E',
+          hover: '#CF6F39',
+          light: '#FFF0E5',
         },
         surface: {
-          50: '#fbfaf8',
-          100: '#f4f2ee',
-          200: '#e7e4dc',
-          300: '#d5d0c5',
+          50: '#FFF7ED',
+          100: '#F8EEE3',
+          200: '#E9DCCF',
+          300: '#D8C7B8',
+        },
+        ink: {
+          DEFAULT: '#30252A',
+        },
+        stone: {
+          50: '#FBF5EE', 100: '#F4EAE0', 200: '#E7D9CC', 300: '#D5C3B4',
+          400: '#AA9688', 500: '#88766B', 600: '#6D5B52', 700: '#51413C',
+          800: '#3D302F', 900: '#30252A', 950: '#241C20',
         }
       },
       fontFamily: {
