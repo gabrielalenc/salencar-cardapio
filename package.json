@@ -19,6 +19,7 @@
     "vite": "^8.3.5"
   },
   "dependencies": {
+    "aos": "^2.3.4",
     "canvas-confetti": "^1.9.4",
     "lucide-react": "^1.66.0",
     "react": "^19.3.1",

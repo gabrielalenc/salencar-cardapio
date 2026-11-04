@@ -6,7 +6,7 @@ export function Header() {
   const { totalCount, openCart } = useCart();
 
   return (
-    <header className="sticky top-0 z-30 border-b border-stone-200/80 bg-white shadow-subtle">
+    <header data-aos="fade-down" className="sticky top-0 z-30 border-b border-stone-200/80 bg-white shadow-subtle">
       <div className="mx-auto flex max-w-6xl items-center justify-between gap-4 px-4 py-3">
         <div
           className="flex cursor-pointer select-none items-center gap-3"

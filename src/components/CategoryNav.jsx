@@ -15,7 +15,7 @@ export function CategoryNav({ activeCategory, onSelectCategory }) {
     });
   };
 
-  const renderCategories = () => CATEGORIES.map((category) => {
+  const renderCategories = () => CATEGORIES.map((category, index) => {
     const Icon = iconMap[category.icon] || Sparkles;
     const isActive = activeCategory === category.id;
 
@@ -24,6 +24,8 @@ export function CategoryNav({ activeCategory, onSelectCategory }) {
         key={category.id}
         type="button"
         onClick={() => onSelectCategory(category.id)}
+        data-aos="zoom-in"
+        data-aos-delay={(index % 4) * 50}
         className={`flex shrink-0 snap-start items-center gap-2 whitespace-nowrap rounded-2xl px-5 py-2.5 text-xs font-bold shadow-subtle transition-all duration-200 hover:-translate-y-0.5 sm:text-sm ${
           isActive
             ? 'scale-[1.02] bg-primary text-white'
@@ -37,7 +39,7 @@ export function CategoryNav({ activeCategory, onSelectCategory }) {
   });
 
   return (
-    <div className="py-2 reveal-item">
+    <div className="py-2">
       <div className="mx-auto max-w-6xl px-4">
         <div className="flex items-center gap-2 py-2 md:hidden">
           <button

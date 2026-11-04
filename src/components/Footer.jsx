@@ -8,7 +8,7 @@ function InstagramIcon({ className = 'h-4 w-4' }) {
 
 export function Footer() {
   return (
-    <footer id="contato" className="reveal-item bg-primary-hover text-stone-200 pt-10 pb-20 md:pb-10 border-t border-primary">
+    <footer id="contato" data-aos="fade-up" className="bg-primary-hover text-stone-200 pt-10 pb-20 md:pb-10 border-t border-primary">
       <div className="max-w-6xl mx-auto px-4">
         <div className="grid grid-cols-1 md:grid-cols-4 gap-8 pb-8 border-b border-primary">
           

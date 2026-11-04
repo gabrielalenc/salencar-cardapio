@@ -1,4 +1,5 @@
 import React, { useState, useMemo, useRef, useEffect } from 'react';
+import AOS from 'aos';
 import { CartProvider, useCart } from './context/CartContext';
 import { Header } from './components/Header';
 import { HeroBanner } from './components/HeroBanner';
@@ -14,6 +15,8 @@ import { Footer } from './components/Footer';
 import { PRODUCTS, CATEGORIES } from './data/products';
 import { CheckCircle2, Search, X } from 'lucide-react';
 import { AnimatedText } from './components/AnimatedText';
+
+let aosInitialized = false;
 
 function DeliveryApp() {
   const [activeCategory, setActiveCategory] = useState('todos');
@@ -55,51 +58,28 @@ function DeliveryApp() {
   }, [activeCategory, searchTerm]);
 
   useEffect(() => {
-    if (!('IntersectionObserver' in window) || window.matchMedia('(prefers-reduced-motion: reduce)').matches) return undefined;
-
-    let observer;
-    let mutationObserver;
-    try {
-      observer = new IntersectionObserver((entries) => {
-        entries.forEach((entry) => {
-          if (entry.isIntersecting) {
-            entry.target.classList.remove('reveal-pending');
-            entry.target.classList.add('reveal-visible');
-            observer.unobserve(entry.target);
-          }
+    if (!aosInitialized) {
+      const reduceMotion = window.matchMedia?.('(prefers-reduced-motion: reduce)').matches ?? false;
+      try {
+        AOS.init({
+          duration: 750,
+          easing: 'ease-out-cubic',
+          offset: 70,
+          once: true,
+          mirror: false,
+          disable: reduceMotion,
         });
-      }, { threshold: 0.08, rootMargin: '0px 0px -24px 0px' });
-
-      const register = (element) => {
-        if (!(element instanceof Element)) return;
-        if (element.matches('.reveal-item') && !element.classList.contains('reveal-visible') && !element.classList.contains('reveal-pending')) {
-          element.classList.add('reveal-pending');
-          try {
-            observer.observe(element);
-          } catch {
-            element.classList.remove('reveal-pending');
-          }
-        }
-        element.querySelectorAll('.reveal-item:not(.reveal-visible):not(.reveal-pending)').forEach(register);
-      };
-
-      document.querySelectorAll('.reveal-item:not(.reveal-visible)').forEach((element) => {
-        register(element);
-      });
-      mutationObserver = new MutationObserver((records) => {
-        records.forEach((record) => record.addedNodes.forEach(register));
-      });
-      mutationObserver.observe(document.body, { childList: true, subtree: true });
-    } catch {
-      document.querySelectorAll('.reveal-pending').forEach((element) => element.classList.remove('reveal-pending'));
+        if (!reduceMotion) document.documentElement.classList.add('aos-enabled');
+        aosInitialized = true;
+      } catch {
+        document.documentElement.classList.remove('aos-enabled');
+      }
     }
-
-    return () => {
-      observer?.disconnect();
-      mutationObserver?.disconnect();
-      document.querySelectorAll('.reveal-pending').forEach((element) => element.classList.remove('reveal-pending'));
-    };
   }, []);
+
+  useEffect(() => {
+    if (aosInitialized) AOS.refreshHard();
+  }, [filteredProducts]);
 
   return (
     <div className="min-h-screen flex flex-col bg-surface-50 text-ink font-sans selection:bg-primary selection:text-white">
@@ -112,11 +92,11 @@ function DeliveryApp() {
       {/* Seção do Cardápio */}
       <section id="cardapio" ref={menuSectionRef} className="py-10 sm:py-16">
         
-        <div className="max-w-6xl mx-auto px-4 text-center mb-6 reveal-item">
+        <div className="max-w-6xl mx-auto px-4 text-center mb-6">
           <span className="text-xs font-black text-primary uppercase tracking-widest block mb-1">
             Cardápio
           </span>
-          <h2 className="font-display font-black text-2xl sm:text-3xl text-stone-900 tracking-tight">
+          <h2 data-aos="fade-down" className="font-display font-black text-2xl sm:text-3xl text-stone-900 tracking-tight">
             <AnimatedText>Conheça o nosso cardápio</AnimatedText>
           </h2>
         </div>
@@ -130,7 +110,7 @@ function DeliveryApp() {
 
         {/* Grid de Produtos */}
         <div className="max-w-6xl mx-auto px-4 pt-6 sm:pt-8">
-          <div className="mb-5 flex justify-center reveal-item">
+          <div data-aos="fade" className="mb-5 flex justify-center">
             <div className="relative w-full max-w-2xl">
               <Search className="pointer-events-none absolute left-4 top-1/2 h-5 w-5 -translate-y-1/2 text-stone-400" />
               <input
@@ -157,13 +137,13 @@ function DeliveryApp() {
             </div>
           </div>
           {searchTerm && (
-            <div className="text-xs text-stone-600 mb-6 bg-surface-50 px-3 py-2 rounded-xl border border-stone-200 inline-block">
+            <div data-aos="fade" className="text-xs text-stone-600 mb-6 bg-surface-50 px-3 py-2 rounded-xl border border-stone-200 inline-block">
               Buscando por: <strong className="text-stone-900 font-bold">"{searchTerm}"</strong>
             </div>
           )}
 
           {filteredProducts.length === 0 ? (
-            <div className="reveal-item bg-surface-50 rounded-2xl p-8 sm:p-12 text-center border border-stone-200 max-w-md mx-auto my-6">
+            <div data-aos="fade-up" className="bg-surface-50 rounded-2xl p-8 sm:p-12 text-center border border-stone-200 max-w-md mx-auto my-6">
               <div className="w-12 h-12 rounded-full bg-stone-100 text-stone-400 flex items-center justify-center mx-auto mb-3">
                 <Search className="w-6 h-6 stroke-[1.5]" />
               </div>
@@ -184,11 +164,12 @@ function DeliveryApp() {
               </button>
             </div>
           ) : (
-            <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-5 sm:gap-6">
-              {filteredProducts.map((product) => (
+            <div className="product-grid grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-5 sm:gap-6">
+              {filteredProducts.map((product, index) => (
                 <ProductCard
                   key={product.id}
                   product={product}
+                  animationDelay={(index % 4) * 50}
                   onSelect={openProductDetails}
                   onAddToCart={handleAddToCart}
                   onBuyNow={(item) => {
