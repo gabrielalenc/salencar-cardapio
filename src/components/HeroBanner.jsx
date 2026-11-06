@@ -1,6 +1,6 @@
 import React from 'react';
 import { MapPin, Phone } from 'lucide-react';
-import { STORE_CONFIG } from '../config/storeConfig';
+import { useAuth } from '../context/AuthContext';
 import { AnimatedText } from './AnimatedText';
 
 function InstagramIcon({ className = 'h-4 w-4' }) {
@@ -8,6 +8,7 @@ function InstagramIcon({ className = 'h-4 w-4' }) {
 }
 
 export function HeroBanner({ onExploreClick }) {
+  const { settings } = useAuth();
   return (
     <section className="overflow-hidden border-b border-stone-200/80 bg-white py-8 sm:py-14">
       <div className="mx-auto max-w-6xl px-4">
@@ -20,13 +21,13 @@ export function HeroBanner({ onExploreClick }) {
               <AnimatedText>Aproveite nosso cardápio! Escolha o que desejar e receba no conforto da sua casa.</AnimatedText>
             </p>
             <div data-aos="fade-up" data-aos-delay="150" className="flex flex-wrap items-center justify-center gap-3 pt-2 lg:justify-start">
-              <a href={STORE_CONFIG.instagramUrl} target="_blank" rel="noopener noreferrer" className="flex h-11 w-11 items-center justify-center rounded-2xl border border-stone-200 bg-white text-stone-700 shadow-subtle transition-all hover:bg-stone-50 hover:text-primary active:scale-95" title="Instagram Salencar" aria-label="Instagram Salencar">
+              <a href={settings.instagramUrl} target="_blank" rel="noopener noreferrer" className="flex h-11 w-11 items-center justify-center rounded-2xl border border-stone-200 bg-white text-stone-700 shadow-subtle transition-all hover:bg-stone-50 hover:text-primary active:scale-95" title="Instagram Salencar" aria-label="Instagram Salencar">
                 <InstagramIcon className="h-5 w-5" />
               </a>
               <a href="#localizacao" className="flex h-11 w-11 items-center justify-center rounded-2xl border border-stone-200 bg-white text-stone-700 shadow-subtle transition-all hover:bg-stone-50 hover:text-primary active:scale-95" title="Onde estamos" aria-label="Onde estamos">
                 <MapPin className="h-5 w-5" />
               </a>
-              <a href={`https://wa.me/${STORE_CONFIG.whatsappNumber}?text=${encodeURIComponent('Olá! Gostaria de fazer um pedido na Salencar.')}`} target="_blank" rel="noopener noreferrer" className="flex h-11 w-11 items-center justify-center rounded-2xl border border-stone-200 bg-white text-stone-700 shadow-subtle transition-all hover:bg-stone-50 hover:text-emerald-600 active:scale-95" title="Chamar no WhatsApp" aria-label="Chamar no WhatsApp">
+              <a href={`https://wa.me/${settings.whatsappNumber}?text=${encodeURIComponent('Olá! Gostaria de fazer um pedido na Salencar.')}`} target="_blank" rel="noopener noreferrer" className="flex h-11 w-11 items-center justify-center rounded-2xl border border-stone-200 bg-white text-stone-700 shadow-subtle transition-all hover:bg-stone-50 hover:text-emerald-600 active:scale-95" title="Chamar no WhatsApp" aria-label="Chamar no WhatsApp">
                 <Phone className="h-5 w-5" />
               </a>
               <button onClick={onExploreClick} className="ml-1 cursor-pointer rounded-2xl bg-primary px-7 py-3 text-sm font-bold text-white shadow-subtle transition-all hover:bg-primary-hover active:scale-95">

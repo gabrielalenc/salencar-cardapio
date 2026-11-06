@@ -21,7 +21,15 @@ export const STORE_CONFIG = {
   status: {
     isOpen: true,
     message: "Aberto para pedidos",
-    hours: "Segunda a Domingo: 17h às 23h30"
+    hours: [
+      { day: "Segunda-feira", time: "Fechado" },
+      { day: "Terça-feira", time: "Fechado" },
+      { day: "Quarta-feira", time: "Fechado" },
+      { day: "Quinta-feira", time: "A partir das 18h" },
+      { day: "Sexta-feira", time: "Durante o dia, até 01h" },
+      { day: "Sábado", time: "Durante o dia, até 01h" },
+      { day: "Domingo", time: "Durante o dia, até 23h" },
+    ]
   },
 
   // Dados de Pagamento

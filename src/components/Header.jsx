@@ -1,9 +1,11 @@
 import React from 'react';
-import { ShoppingBag } from 'lucide-react';
+import { LogIn, ShieldCheck, ShoppingBag, UserRound } from 'lucide-react';
 import { useCart } from '../context/CartContext';
+import { useAuth } from '../context/AuthContext';
 
-export function Header() {
+export function Header({ onOpenAccount, onOpenAdminPanel }) {
   const { totalCount, openCart } = useCart();
+  const { currentUser, settings } = useAuth();
 
   return (
     <header data-aos="fade-down" className="sticky top-0 z-30 border-b border-stone-200/80 bg-white shadow-subtle">
@@ -16,7 +18,7 @@ export function Header() {
             <img src="/images/logo.jpg" alt="Salencar Batidas" className="h-full w-full object-cover" />
           </div>
           <div>
-            <div className="font-display text-lg font-black leading-none tracking-tight text-stone-900 sm:text-xl">SALENCAR</div>
+            <div className="max-w-[120px] truncate font-display text-lg font-black leading-none tracking-tight text-stone-900 sm:max-w-[220px] sm:text-xl">{settings.name}</div>
             <p className="mt-0.5 text-[10px] font-semibold uppercase tracking-wider text-stone-500">Batidas Artesanais</p>
           </div>
         </div>
@@ -26,26 +28,32 @@ export function Header() {
           <a href="#localizacao" className="py-1 transition-colors hover:text-primary">Localização & Contato</a>
         </nav>
 
-        <button
-          onClick={openCart}
-          className="group flex shrink-0 items-center gap-1.5 rounded-2xl border border-stone-200 bg-white px-2 py-2 text-xs font-bold text-stone-800 shadow-subtle transition-all hover:border-primary/30 hover:bg-stone-50 hover:shadow-card active:scale-95 sm:gap-3 sm:px-3 sm:py-2.5 sm:text-sm"
-          aria-label={`Abrir carrinho de compras${totalCount ? `, ${totalCount} ${totalCount === 1 ? 'produto' : 'produtos'}` : ', vazio'}`}
-        >
-          <span className="relative flex h-8 w-8 shrink-0 items-center justify-center rounded-xl bg-primary text-white transition-colors group-hover:bg-primary-hover sm:h-10 sm:w-10">
-            <ShoppingBag className="h-5 w-5" />
-            {totalCount > 0 && (
-              <span className="absolute -right-1.5 -top-1.5 flex h-[18px] min-w-[18px] items-center justify-center rounded-full border-2 border-white bg-accent px-0.5 text-[10px] font-bold text-white shadow-xs">
-                {totalCount}
-              </span>
-            )}
-          </span>
-          <span className="min-w-0 text-left text-xs font-bold sm:min-w-24 sm:text-sm">
-            <span className="block leading-tight"><span className="sm:hidden">Sacola</span><span className="hidden sm:inline">Meu Carrinho</span></span>
-            <span className="mt-0.5 hidden text-[11px] font-medium text-stone-500 sm:block">
-              {totalCount === 0 ? 'Sua sacola está vazia' : `${totalCount} ${totalCount === 1 ? 'produto' : 'produtos'}`}
+        <div className="flex shrink-0 items-center gap-2">
+          <button
+            type="button"
+            onClick={currentUser?.role === 'admin' ? onOpenAdminPanel : onOpenAccount}
+            className="inline-flex max-w-36 items-center gap-2 rounded-xl px-2 py-2 text-xs font-semibold text-stone-600 transition hover:bg-stone-50 hover:text-primary sm:max-w-48 sm:px-3"
+            aria-label={currentUser?.role === 'admin' ? 'Abrir painel administrativo' : currentUser ? 'Abrir minha conta' : 'Entrar ou criar uma conta'}
+          >
+            {currentUser?.role === 'admin' ? <ShieldCheck className="h-4 w-4 shrink-0" /> : currentUser ? <UserRound className="h-4 w-4 shrink-0" /> : <LogIn className="h-4 w-4 shrink-0" />}
+            <span className="truncate">{currentUser?.role === 'admin' ? 'Painel' : currentUser?.name || 'Entrar'}</span>
+          </button>
+
+          <button
+            onClick={openCart}
+            className="group flex shrink-0 items-center gap-1.5 rounded-2xl border border-stone-200 bg-white px-2 py-2 text-xs font-bold text-stone-800 shadow-subtle transition-all hover:border-primary/30 hover:bg-stone-50 hover:shadow-card active:scale-95 sm:gap-3 sm:px-3 sm:py-2.5 sm:text-sm"
+            aria-label={`Abrir carrinho de compras${totalCount ? `, ${totalCount} ${totalCount === 1 ? 'produto' : 'produtos'}` : ', vazio'}`}
+          >
+            <span className="relative flex h-8 w-8 shrink-0 items-center justify-center rounded-xl bg-primary text-white transition-colors group-hover:bg-primary-hover sm:h-10 sm:w-10">
+              <ShoppingBag className="h-5 w-5" />
+              {totalCount > 0 && <span className="absolute -right-1.5 -top-1.5 flex h-[18px] min-w-[18px] items-center justify-center rounded-full border-2 border-white bg-accent px-0.5 text-[10px] font-bold text-white shadow-xs">{totalCount}</span>}
             </span>
-          </span>
-        </button>
+            <span className="min-w-0 text-left text-xs font-bold sm:min-w-24 sm:text-sm">
+              <span className="block leading-tight"><span className="sm:hidden">Sacola</span><span className="hidden sm:inline">Meu Carrinho</span></span>
+              <span className="mt-0.5 hidden text-[11px] font-medium text-stone-500 sm:block">{totalCount === 0 ? 'Sua sacola está vazia' : `${totalCount} ${totalCount === 1 ? 'produto' : 'produtos'}`}</span>
+            </span>
+          </button>
+        </div>
       </div>
     </header>
   );

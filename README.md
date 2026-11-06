@@ -69,12 +69,11 @@ As imagens reais fornecidas estão salvas com resolução total em `public/image
 
 3. **Navegação & Busca Instantânea:**
    - Barra de pesquisa com filtro em tempo real por nome, ingredientes ou descrição.
-   - Categorias com contagem de produtos: *Todos*, *Batidas Artesanais*, *Combos & Kits*, *Gelos & Acessórios*.
+   - Categorias com contagem de produtos: *Todos*, *Batidas Artesanais* e *Combos & Kits*.
 
 4. **Modal de Detalhes do Produto:**
    - Foto ampliada em alta definição.
-   - Seleção obrigatória de base: *Vodka Premium*, *Cachaça Artesanal*, ou *Sem Álcool (Kids)*.
-   - Seleção de adicionais: *Calda Extra na Borda*, *Dose de Leite Condensado*, *Gelo Especial de Água de Coco*.
+   - Opções de sabores e adicionais disponíveis para cada produto do cardápio alcoólico.
    - Campo de observações com contador de caracteres.
    - Seletor de quantidade com recálculo automático em tempo real.
 

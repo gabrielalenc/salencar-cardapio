@@ -1,10 +1,11 @@
 import React, { useState } from 'react';
 import { CheckCircle2, MessageSquare, Copy, Check, ExternalLink, Clock } from 'lucide-react';
-import { STORE_CONFIG } from '../config/storeConfig';
 import { formatCurrency } from '../utils/formatters';
+import { useAuth } from '../context/AuthContext';
 
 export function OrderSuccessModal({ orderData, onClose }) {
   const [copied, setCopied] = useState(false);
+  const { settings } = useAuth();
 
   if (!orderData) return null;
 
@@ -77,7 +78,7 @@ export function OrderSuccessModal({ orderData, onClose }) {
               Tempo Estimado
             </span>
             <p className="text-xs font-semibold text-stone-900 mt-0.5">
-              {STORE_CONFIG.estimatedDeliveryTime}
+              {settings.estimatedDeliveryTime}
             </p>
           </div>
 

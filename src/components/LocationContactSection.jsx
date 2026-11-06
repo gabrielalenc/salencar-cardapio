@@ -1,7 +1,7 @@
 import React from 'react';
 import { MapPin, Clock, Phone, Navigation, ExternalLink, Eye } from 'lucide-react';
-import { STORE_CONFIG } from '../config/storeConfig';
 import { AnimatedText } from './AnimatedText';
+import { useAuth } from '../context/AuthContext';
 
 function InstagramIcon({ className = "w-4 h-4" }) {
   return (
@@ -14,9 +14,10 @@ function InstagramIcon({ className = "w-4 h-4" }) {
 }
 
 export function LocationContactSection() {
-  const destinationQuery = encodeURIComponent(`${STORE_CONFIG.name}, ${STORE_CONFIG.pickupAddress}`);
+  const { settings } = useAuth();
+  const destinationQuery = encodeURIComponent(`${settings.name}, ${settings.pickupAddress}`);
   const googleMapsRouteUrl = `https://www.google.com/maps/dir/?api=1&destination=${destinationQuery}`;
-  const streetViewUrl = `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(STORE_CONFIG.pickupAddress)}`;
+  const streetViewUrl = `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(settings.pickupAddress)}`;
 
   return (
     <section id="localizacao" className="py-12 sm:py-16 bg-surface-50 border-t border-stone-200/80">
@@ -39,7 +40,7 @@ export function LocationContactSection() {
               <div className="relative w-full aspect-[4/3] sm:aspect-[16/10] bg-transparent overflow-hidden flex-1 group">
                 <iframe
                   title="Google Street View - Rua do Estabelecimento Salencar"
-                  src={`https://maps.google.com/maps?q=${encodeURIComponent(STORE_CONFIG.pickupAddress)}&t=m&z=17&ie=UTF8&iwloc=&output=embed`}
+                  src={`https://maps.google.com/maps?q=${encodeURIComponent(settings.pickupAddress)}&t=m&z=17&ie=UTF8&iwloc=&output=embed`}
                   className="w-full h-full border-0 filter contrast-[1.05]"
                   loading="lazy"
                   allowFullScreen
@@ -48,7 +49,7 @@ export function LocationContactSection() {
                 <div className="absolute top-3 left-3 bg-stone-900/90 backdrop-blur-md text-white px-3 py-1.5 rounded-xl border border-white/20 shadow-lg text-xs pointer-events-none">
                   <div className="font-bold flex items-center gap-1.5">
                     <MapPin className="w-3.5 h-3.5 text-accent" />
-                    <span>{STORE_CONFIG.pickupAddress}</span>
+                    <span>{settings.pickupAddress}</span>
                   </div>
                   <span className="text-[10px] text-stone-300 block">Fachada & Acesso Salencar</span>
                 </div>
@@ -85,7 +86,7 @@ export function LocationContactSection() {
                     Endereço Completo
                   </span>
                   <h3 className="font-bold text-base sm:text-lg text-stone-900 leading-snug mt-0.5">
-                    {STORE_CONFIG.pickupAddress}
+                    {settings.pickupAddress}
                   </h3>
                   <p className="text-xs text-stone-500 mt-1 leading-relaxed">
                     Balcão para retirada rápida de pedidos no local, sem custo de entrega.
@@ -116,11 +117,16 @@ export function LocationContactSection() {
                   <span className="text-[11px] font-bold text-accent-hover uppercase tracking-wider block">
                     Horário de Funcionamento
                   </span>
-                  <p className="text-xs sm:text-sm font-bold text-stone-900 mt-0.5">
-                    {STORE_CONFIG.status.hours}
-                  </p>
+                  <ul className="mt-2 space-y-1.5" aria-label="Horários por dia da semana">
+                    {settings.status.hours.map(({ day, time }) => (
+                      <li key={day} className="flex items-center justify-between gap-3 text-xs sm:text-sm">
+                        <span className="font-medium text-stone-600">{day}</span>
+                        <span className={`text-right font-semibold ${time === 'Fechado' ? 'text-stone-400' : 'text-stone-900'}`}>{time}</span>
+                      </li>
+                    ))}
+                  </ul>
                   <p className="text-[11px] text-stone-500 mt-0.5">
-                    Tempo médio de entrega: {STORE_CONFIG.estimatedDeliveryTime}
+                    Tempo médio de entrega: {settings.estimatedDeliveryTime}
                   </p>
                 </div>
               </div>
@@ -137,13 +143,13 @@ export function LocationContactSection() {
                       WhatsApp Comercial
                     </span>
                     <span className="text-xs sm:text-sm font-bold text-stone-900">
-                      {STORE_CONFIG.whatsappFormatted}
+                      {settings.whatsappFormatted}
                     </span>
                   </div>
                 </div>
 
                 <a
-                  href={`https://wa.me/${STORE_CONFIG.whatsappNumber}?text=${encodeURIComponent('Olá! Gostaria de fazer um pedido ou tirar uma dúvida.')}`}
+                  href={`https://wa.me/${settings.whatsappNumber}?text=${encodeURIComponent('Olá! Gostaria de fazer um pedido ou tirar uma dúvida.')}`}
                   target="_blank"
                   rel="noopener noreferrer"
                   className="inline-flex items-center gap-1.5 px-3 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold transition-all shadow-subtle active:scale-95"
@@ -153,14 +159,14 @@ export function LocationContactSection() {
                 </a>
               </div>
               <a
-                href={STORE_CONFIG.instagramUrl}
+                href={settings.instagramUrl}
                 target="_blank"
                 rel="noopener noreferrer"
                 className="mt-3 inline-flex items-center gap-2 border-t border-stone-100 pt-3 text-xs font-medium text-stone-600 transition-colors hover:text-primary"
-                aria-label={`Instagram ${STORE_CONFIG.instagram}`}
+                aria-label={`Instagram ${settings.instagram}`}
               >
                 <InstagramIcon className="w-4 h-4" />
-                <span>Acompanhe {STORE_CONFIG.instagram}</span>
+                <span>Acompanhe {settings.instagram}</span>
                 <ExternalLink className="w-3 h-3 text-stone-400" />
               </a>
             </div>

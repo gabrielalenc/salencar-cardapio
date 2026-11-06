@@ -6,6 +6,7 @@ import { AnimatedText } from './AnimatedText';
 export function ProductCard({ product, onSelect, onAddToCart, onBuyNow, animationDelay = 0 }) {
   const [imageLoaded, setImageLoaded] = useState(false);
   const [imageError, setImageError] = useState(false);
+  const unavailable = product.available === false;
 
   return (
     <div
@@ -32,6 +33,7 @@ export function ProductCard({ product, onSelect, onAddToCart, onBuyNow, animatio
             </span>
           </div>
         )}
+        {unavailable && <div className="absolute inset-0 flex items-center justify-center bg-stone-900/45"><span className="rounded-lg bg-white px-3 py-1.5 text-xs font-bold text-stone-800 shadow">Indisponível</span></div>}
 
         {product.volume && (
           <div className="absolute bottom-2 right-2 pointer-events-none">
@@ -61,20 +63,22 @@ export function ProductCard({ product, onSelect, onAddToCart, onBuyNow, animatio
           <div className="mt-2 grid w-full gap-2">
             <button
               type="button"
-              onClick={(event) => { event.stopPropagation(); onAddToCart(product); }}
+              onClick={(event) => { event.stopPropagation(); if (!unavailable) onAddToCart(product); }}
+              disabled={unavailable}
               aria-label={`Adicionar ${product.name} ao carrinho`}
-              className="interactive-hover flex w-full items-center justify-center gap-1.5 rounded-xl border border-stone-200 bg-white px-3 py-2 text-xs font-semibold text-stone-700 hover:border-primary/50 hover:bg-stone-50 active:scale-[0.98]"
+              className="interactive-hover flex w-full items-center justify-center gap-1.5 rounded-xl border border-stone-200 bg-white px-3 py-2 text-xs font-semibold text-stone-700 hover:border-primary/50 hover:bg-stone-50 active:scale-[0.98] disabled:cursor-not-allowed disabled:opacity-50"
             >
               <Plus className="h-3.5 w-3.5" />
-              <span>Adicionar ao carrinho</span>
+              <span>{unavailable ? 'Indisponível' : product.requiresCustomization ? 'Escolher opções' : 'Adicionar ao carrinho'}</span>
             </button>
             <button
               type="button"
-              onClick={(event) => { event.stopPropagation(); onBuyNow(product); }}
-              className="interactive-hover flex w-full items-center justify-center gap-1.5 rounded-xl bg-primary px-3 py-2 text-xs font-semibold text-white hover:bg-primary-hover active:scale-[0.98]"
+              onClick={(event) => { event.stopPropagation(); if (!unavailable) onBuyNow(product); }}
+              disabled={unavailable}
+              className="interactive-hover flex w-full items-center justify-center gap-1.5 rounded-xl bg-primary px-3 py-2 text-xs font-semibold text-white hover:bg-primary-hover active:scale-[0.98] disabled:cursor-not-allowed disabled:opacity-50"
             >
               <ShoppingCart className="h-3.5 w-3.5" />
-              <span>Comprar agora</span>
+              <span>{unavailable ? 'Indisponível' : product.requiresCustomization ? 'Escolher opções' : 'Comprar agora'}</span>
             </button>
           </div>
         </div>

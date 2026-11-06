@@ -15,6 +15,9 @@ import { Footer } from './components/Footer';
 import { PRODUCTS, CATEGORIES } from './data/products';
 import { CheckCircle2, Search, X } from 'lucide-react';
 import { AnimatedText } from './components/AnimatedText';
+import { AuthProvider, useAuth } from './context/AuthContext';
+import { AccountModal } from './components/AccountModal';
+import { AdminPanel } from './components/AdminPanel';
 
 let aosInitialized = false;
 
@@ -22,10 +25,28 @@ function DeliveryApp() {
   const [activeCategory, setActiveCategory] = useState('todos');
   const [searchTerm, setSearchTerm] = useState('');
   const [orderSuccessData, setOrderSuccessData] = useState(null);
+  const [accountOpen, setAccountOpen] = useState(false);
+  const [accountMode, setAccountMode] = useState('login');
+  const [adminOpen, setAdminOpen] = useState(false);
   const { openProductDetails, addToCart, openCheckout, addedProductName } = useCart();
+  const { currentUser, productSettings } = useAuth();
   const menuSectionRef = useRef(null);
 
+  const activeProducts = useMemo(() => PRODUCTS
+    .filter((product) => productSettings[product.id]?.active !== false)
+    .map((product) => ({
+      ...product,
+      price: productSettings[product.id]?.price !== undefined && Number.isFinite(Number(productSettings[product.id].price))
+        ? Number(productSettings[product.id].price)
+        : product.price,
+      available: productSettings[product.id]?.available !== false,
+    })), [productSettings]);
+
   const handleAddToCart = (product) => {
+    if (product.requiresCustomization) {
+      openProductDetails(product);
+      return;
+    }
     addToCart(product, product.bases?.[0] || null);
   };
 
@@ -34,17 +55,17 @@ function DeliveryApp() {
   };
 
   const countsByCategory = useMemo(() => {
-    const counts = { todos: PRODUCTS.length };
+    const counts = { todos: activeProducts.length };
     CATEGORIES.forEach((cat) => {
       if (cat.id !== 'todos') {
-        counts[cat.id] = PRODUCTS.filter((p) => p.category === cat.id).length;
+        counts[cat.id] = activeProducts.filter((p) => p.category === cat.id).length;
       }
     });
     return counts;
-  }, []);
+  }, [activeProducts]);
 
   const filteredProducts = useMemo(() => {
-    return PRODUCTS.filter((product) => {
+    return activeProducts.filter((product) => {
       const matchCategory =
         activeCategory === 'todos' || product.category === activeCategory;
       const matchSearch =
@@ -55,11 +76,10 @@ function DeliveryApp() {
 
       return matchCategory && matchSearch;
     });
-  }, [activeCategory, searchTerm]);
+  }, [activeCategory, searchTerm, activeProducts]);
 
   useEffect(() => {
     if (!aosInitialized) {
-      const reduceMotion = window.matchMedia?.('(prefers-reduced-motion: reduce)').matches ?? false;
       try {
         AOS.init({
           duration: 750,
@@ -67,10 +87,14 @@ function DeliveryApp() {
           offset: 70,
           once: true,
           mirror: false,
-          disable: reduceMotion,
         });
-        if (!reduceMotion) document.documentElement.classList.add('aos-enabled');
+        document.documentElement.classList.add('aos-enabled');
         aosInitialized = true;
+        if (document.readyState === 'complete') {
+          AOS.refreshHard();
+        } else {
+          window.addEventListener('load', AOS.refreshHard, { once: true });
+        }
       } catch {
         document.documentElement.classList.remove('aos-enabled');
       }
@@ -84,7 +108,7 @@ function DeliveryApp() {
   return (
     <div className="min-h-screen flex flex-col bg-surface-50 text-ink font-sans selection:bg-primary selection:text-white">
       {/* Cabeçalho */}
-      <Header />
+      <Header onOpenAccount={() => { setAccountMode('login'); setAccountOpen(true); }} onOpenAdminPanel={() => setAdminOpen(true)} />
 
       {/* Banner Principal com Selo Integrado Junto à Imagem */}
       <HeroBanner onExploreClick={scrollToMenu} />
@@ -173,6 +197,10 @@ function DeliveryApp() {
                   onSelect={openProductDetails}
                   onAddToCart={handleAddToCart}
                   onBuyNow={(item) => {
+                    if (item.requiresCustomization) {
+                      openProductDetails(item);
+                      return;
+                    }
                     addToCart(item, item.bases?.[0] || null, [], '', 1, false);
                     openCheckout();
                   }}
@@ -192,7 +220,7 @@ function DeliveryApp() {
       {/* Modais e Drawers Funcionais */}
       <ProductModal />
       <CartDrawer />
-      <CheckoutModal onOrderSuccess={(data) => setOrderSuccessData(data)} />
+      <CheckoutModal onOrderSuccess={(data) => setOrderSuccessData(data)} onRequestAuth={(mode) => { setAccountMode(mode); setAccountOpen(true); }} />
       <OrderSuccessModal
         orderData={orderSuccessData}
         onClose={() => setOrderSuccessData(null)}
@@ -200,6 +228,9 @@ function DeliveryApp() {
 
       {/* Barra de Sacola Flutuante para Celular */}
       <MobileFloatingCart />
+
+      <AccountModal isOpen={accountOpen} initialMode={accountMode} onClose={() => setAccountOpen(false)} onOpenAdminPanel={() => setAdminOpen(true)} />
+      {adminOpen && currentUser?.role === 'admin' && <AdminPanel onClose={() => setAdminOpen(false)} />}
 
       {addedProductName && (
         <div
@@ -217,8 +248,10 @@ function DeliveryApp() {
 
 export default function App() {
   return (
-    <CartProvider>
-      <DeliveryApp />
-    </CartProvider>
+    <AuthProvider>
+      <CartProvider>
+        <DeliveryApp />
+      </CartProvider>
+    </AuthProvider>
   );
 }

@@ -5,6 +5,6 @@ export function AnimatedText({ children }) {
   return text.split(/(\s+)/).map((part, index) => (
     /^\s+$/.test(part)
       ? part
-      : <span key={`${part}-${index}`} className="animated-word" style={{ animationDelay: `${Math.min(index * 24, 240)}ms` }}>{part}</span>
+      : <span key={`${part}-${index}`} className="animated-word" style={{ '--word-reveal-delay': `${Math.min(index * 24, 240)}ms` }}>{part}</span>
   ));
 }

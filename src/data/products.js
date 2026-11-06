@@ -2,161 +2,88 @@ export const CATEGORIES = [
   { id: "todos", name: "Todos os Produtos", icon: "Sparkles" },
   { id: "batidas", name: "Batidas Artesanais", icon: "Wine" },
   { id: "combos", name: "Combos & Kits", icon: "Layers" },
-  { id: "gelos", name: "Gelos & Acessórios", icon: "Snowflake" },
 ];
 
+const baseComAlcool = { id: "com-alcool", name: "Com álcool", price: 0 };
+const duplaFlavorOptions = [
+  { id: "morango", name: "Morango", image: "/images/batida-morango.jpg" },
+  { id: "morango-creme-avela", name: "Morango com creme de avelã", image: "/images/batida-morango.jpg" },
+  { id: "maracuja", name: "Maracujá", image: "/images/batida-maracuja.jpg" },
+  { id: "maracuja-creme-avela", name: "Maracujá com creme de avelã", image: "/images/batida-maracuja.jpg" },
+  { id: "limao", name: "Limão", image: "/images/batida-limao.jpg" },
+  { id: "limao-creme-avela", name: "Limão com creme de avelã", image: "/images/batida-limao-creme-avela.jpg" },
+];
+
+const duplaBases = duplaFlavorOptions.flatMap((first, firstIndex) =>
+  duplaFlavorOptions.slice(firstIndex).map((second) => {
+    const sameFlavor = first.id === second.id;
+    return {
+      id: `dupla-${first.id}--${second.id}`,
+      name: sameFlavor ? `2x ${first.name}` : `${first.name} + ${second.name}`,
+      price: 0,
+    };
+  })
+);
+
+const batida = ({ id, sabor, tipo, price, image, bases = [baseComAlcool] }) => ({
+  id,
+  name: `Batida de ${sabor}${tipo ? ` ${tipo}` : ""}`,
+  category: "batidas",
+  price,
+  volume: "300 ml",
+  image,
+  description: `Batida alcoólica artesanal de ${sabor.toLowerCase()}, preparada e servida bem gelada${tipo === "com creme de avelã" ? ", com creme de avelã" : ""}.`,
+  ingredients: `Batida alcoólica artesanal de ${sabor.toLowerCase()}${tipo === "com creme de avelã" ? " com creme de avelã" : ""}.`,
+  bases,
+  extras: sabor === "Morango"
+    ? [
+        { id: "calda-morango", name: "Calda extra de morango na borda", price: 2.5 },
+        { id: "leite-condensado", name: "Dose extra de leite condensado", price: 2 },
+      ]
+    : sabor === "Maracujá"
+      ? [
+          { id: "calda-maracuja", name: "Polpa extra com sementes", price: 2.5 },
+          { id: "leite-condensado", name: "Dose extra de leite condensado", price: 2 },
+        ]
+      : [],
+});
+
 export const PRODUCTS = [
-  {
-    id: "batida-morango",
-    name: "Batida de Morango",
-    category: "batidas",
-    price: 18.90,
-    volume: "300 ml",
-    image: "/images/batida-morango.jpg",
-    tag: "Mais pedido",
-    description: "Batida cremosa preparada com morangos selecionados, leite condensado e calda artesanal de morango.",
-    ingredients: "Morango in natura, calda artesanal, leite condensado, leite integral e base selecionada.",
-    bases: [
-      { id: "vodka", name: "Vodka Premium (Tradicional)", price: 0 },
-      { id: "cachaca", name: "Cachaça Prata Artesanal", price: 0 },
-      { id: "sem-alcool", name: "Sem Álcool", price: 0 }
-    ],
-    extras: [
-      { id: "calda-morango", name: "Calda extra de morango na borda", price: 2.50 },
-      { id: "leite-condensado", name: "Dose extra de leite condensado", price: 2.00 },
-      { id: "gelo-coco", name: "Gelo artesanal de água de coco", price: 3.00 }
-    ]
-  },
-  {
-    id: "batida-maracuja",
-    name: "Batida de Maracujá",
-    category: "batidas",
-    price: 18.90,
-    volume: "300 ml",
-    image: "/images/batida-maracuja.jpg",
-    tag: "Destaque",
-    description: "Equilíbrio entre a acidez natural da polpa com sementes e a doçura aveludada do leite condensado.",
-    ingredients: "Polpa fresca de maracujá com sementes, leite condensado, creme de leite e base especial.",
-    bases: [
-      { id: "vodka", name: "Vodka Premium (Tradicional)", price: 0 },
-      { id: "cachaca", name: "Cachaça Prata Artesanal", price: 0 },
-      { id: "sem-alcool", name: "Sem Álcool", price: 0 }
-    ],
-    extras: [
-      { id: "calda-maracuja", name: "Polpa extra com sementes", price: 2.50 },
-      { id: "leite-condensado", name: "Dose extra de leite condensado", price: 2.00 },
-      { id: "gelo-coco", name: "Gelo artesanal de água de coco", price: 3.00 }
-    ]
-  },
+  batida({ id: "morango-com-alcool", sabor: "Morango", tipo: "com álcool", price: 15, image: "/images/batida-morango.jpg" }),
+  batida({ id: "maracuja-com-alcool", sabor: "Maracujá", tipo: "com álcool", price: 15, image: "/images/batida-maracuja.jpg" }),
+  batida({ id: "limao-com-alcool", sabor: "Limão", tipo: "com álcool", price: 15, image: "/images/batida-limao.jpg" }),
+  batida({ id: "morango-creme-avela", sabor: "Morango", tipo: "com creme de avelã", price: 15, image: "/images/batida-morango.jpg" }),
+  batida({ id: "maracuja-creme-avela", sabor: "Maracujá", tipo: "com creme de avelã", price: 15, image: "/images/batida-maracuja.jpg" }),
+  batida({ id: "limao-creme-avela", sabor: "Limão", tipo: "com creme de avelã", price: 15, image: "/images/batida-limao-creme-avela.jpg" }),
   {
     id: "batida-espanhola",
     name: "Batida Espanhola",
     category: "batidas",
-    price: 19.90,
+    price: 19.9,
     volume: "300 ml",
     image: "/images/batida-espanhola.jpg",
     tag: "Clássica",
-    description: "Receita clássica com vinho tinto nobre batido com abacaxi e leite condensado. Textura densa e encorpada.",
-    ingredients: "Vinho tinto selecionado suave, polpa de abacaxi fresco e leite condensado.",
-    bases: [
-      { id: "vinho-suave", name: "Vinho Tinto Suave (Tradicional)", price: 0 },
-      { id: "vinho-seco", name: "Vinho Tinto Seco", price: 0 }
-    ],
+    description: "Receita clássica com vinho tinto, abacaxi e leite condensado.",
+    ingredients: "Vinho tinto, abacaxi e leite condensado.",
+    bases: [{ id: "vinho-suave", name: "Vinho tinto suave", price: 0 }, { id: "vinho-seco", name: "Vinho tinto seco", price: 0 }],
     extras: [
-      { id: "dose-abacaxi", name: "Pedaços extras de abacaxi", price: 2.50 },
-      { id: "leite-condensado", name: "Dose extra de leite condensado", price: 2.00 },
-      { id: "copo-acrilico", name: "Copo oficial Salencar 500ml", price: 5.00 }
-    ]
+      { id: "dose-abacaxi", name: "Pedaços extras de abacaxi", price: 2.5 },
+      { id: "leite-condensado", name: "Dose extra de leite condensado", price: 2 },
+    ],
   },
   {
-    id: "combo-trio-tropical",
-    name: "Combo Trio Salencar",
+    id: "combo-2-batidas-alcoolicas",
+    name: "Duplas de Batidas",
     category: "combos",
-    price: 52.90,
-    volume: "3 x 300 ml",
-    image: "/images/banner-hero.jpg",
-    tag: "Combo 3 unidades",
-    description: "Experimente os três sabores principais: 1 Batida de Morango, 1 Batida de Maracujá e 1 Batida Espanhola.",
-    ingredients: "Três garrafas individuais de 300ml prontas para consumo imediato, bem geladas.",
-    bases: [
-      { id: "padrao", name: "Mix dos 3 sabores (1 Morango, 1 Maracujá, 1 Espanhola)", price: 0 },
-      { id: "escolha-livre", name: "Personalizar sabores (informar nas observações)", price: 0 }
-    ],
-    extras: [
-      { id: "gelos-duplos", name: "2x Gelo artesanal de água de coco", price: 5.00 },
-      { id: "dois-copos", name: "2x Copos oficiais Salencar 500ml", price: 9.00 }
-    ]
-  },
-  {
-    id: "combo-dupla-perfeita",
-    name: "Combo Dupla de Batidas",
-    category: "combos",
-    price: 35.90,
+    price: 25,
     volume: "2 x 300 ml",
     image: "/images/batida-maracuja.jpg",
-    tag: "Combo 2 unidades",
-    description: "Duas garrafas artesanais de 300ml geladas. Escolha os dois sabores de sua preferência.",
-    ingredients: "Duas garrafas individuais de 300ml.",
-    bases: [
-      { id: "morango-maracuja", name: "1 Morango + 1 Maracujá", price: 0 },
-      { id: "morango-espanhola", name: "1 Morango + 1 Espanhola", price: 1.00 },
-      { id: "maracuja-espanhola", name: "1 Maracujá + 1 Espanhola", price: 1.00 },
-      { id: "dois-morangos", name: "2 Morangos", price: 0 },
-      { id: "dois-maracujas", name: "2 Maracujás", price: 0 }
-    ],
-    extras: [
-      { id: "gelo-coco", name: "Gelo artesanal de água de coco", price: 3.00 },
-      { id: "copo-acrilico", name: "Copo oficial Salencar 500ml", price: 5.00 }
-    ]
+    tag: "2 por R$ 25,00",
+    description: "Monte sua dupla com duas batidas alcoólicas. Combine morango, maracujá ou limão, tradicionais ou com creme de avelã.",
+    ingredients: "Duas batidas alcoólicas à escolha: morango, maracujá ou limão, com ou sem creme de avelã.",
+    bases: duplaBases,
+    pairOptions: duplaFlavorOptions,
+    extras: [],
+    requiresCustomization: true,
   },
-  {
-    id: "combo-galera-festa",
-    name: "Combo Quatro Unidades",
-    category: "combos",
-    price: 69.90,
-    volume: "4 x 300 ml",
-    image: "/images/banner-hero.jpg",
-    tag: "Combo 4 unidades",
-    description: "Quatro garrafas de 300ml para compartilhar. Ideal para encontros, confraternizações e finais de semana.",
-    ingredients: "Quatro garrafas individuais de 300ml.",
-    bases: [
-      { id: "sortido-salencar", name: "Seleção da casa (2 Morangos, 1 Maracujá, 1 Espanhola)", price: 0 },
-      { id: "custom-observacao", name: "Personalizado (especificar nas observações)", price: 0 }
-    ],
-    extras: [
-      { id: "trio-gelos", name: "3x Gelo artesanal de água de coco", price: 7.50 },
-      { id: "sacola-termica", name: "Embalagem térmica protetora", price: 6.00 }
-    ]
-  },
-  {
-    id: "gelo-coco-saborizado",
-    name: "Gelo Artesanal de Água de Coco",
-    category: "gelos",
-    price: 3.50,
-    volume: "200 g",
-    image: "/images/batida-maracuja.jpg",
-    tag: "Acompanhamento",
-    description: "Gelo produzido a partir de 100% água de coco natural. Mantém a bebida gelada sem diluir o sabor.",
-    ingredients: "Água de coco natural pasteurizada.",
-    bases: [
-      { id: "coco-puro", name: "Água de coco natural pura", price: 0 },
-      { id: "coco-maracuja", name: "Água de coco com polpa de maracujá", price: 0.50 }
-    ],
-    extras: []
-  },
-  {
-    id: "copo-salencar-500",
-    name: "Copo Oficial Salencar 500ml",
-    category: "gelos",
-    price: 5.90,
-    volume: "500 ml",
-    image: "/images/logo.jpg",
-    tag: "Acessório",
-    description: "Copo acrílico reutilizável com estampa oficial Salencar. Resistente, seguro e livre de BPA.",
-    ingredients: "Acrílico alimentar de alta resistência.",
-    bases: [
-      { id: "unidade", name: "Unidade individual (500ml)", price: 0 }
-    ],
-    extras: []
-  }
 ];

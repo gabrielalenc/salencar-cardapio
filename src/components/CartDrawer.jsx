@@ -1,7 +1,6 @@
 import React from 'react';
 import { X, Trash2, Plus, Minus, ShoppingBag, ArrowRight } from 'lucide-react';
 import { useCart } from '../context/CartContext';
-import { STORE_CONFIG } from '../config/storeConfig';
 import { formatCurrency } from '../utils/formatters';
 
 export function CartDrawer() {
@@ -122,7 +121,7 @@ export function CartDrawer() {
 
                     {item.base && (
                       <p className="text-[11px] text-stone-600 font-medium mt-0.5">
-                        Base: {item.base.name}
+                        Opção: {item.base.name}
                       </p>
                     )}
 

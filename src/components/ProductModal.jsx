@@ -7,6 +7,7 @@ export function ProductModal() {
   const { selectedProduct, closeProductDetails, addToCart, openCart } = useCart();
 
   const [selectedBase, setSelectedBase] = useState(null);
+  const [pairSelections, setPairSelections] = useState(['', '']);
   const [selectedExtras, setSelectedExtras] = useState([]);
   const [notes, setNotes] = useState('');
   const [quantity, setQuantity] = useState(1);
@@ -14,6 +15,7 @@ export function ProductModal() {
   useEffect(() => {
     if (selectedProduct) {
       setSelectedBase(selectedProduct.bases?.[0] || null);
+      setPairSelections(['', '']);
       setSelectedExtras([]);
       setNotes('');
       setQuantity(1);
@@ -33,13 +35,25 @@ export function ProductModal() {
     });
   };
 
-  const basePrice = selectedBase?.price || 0;
+  const pairOptions = selectedProduct.pairOptions || [];
+  const selectedPairOptions = pairSelections.map((id) => pairOptions.find((option) => option.id === id) || null);
+  const pairReady = selectedPairOptions.every(Boolean);
+  const orderedPairIds = pairReady
+    ? [...pairSelections].sort((first, second) => pairOptions.findIndex((option) => option.id === first) - pairOptions.findIndex((option) => option.id === second))
+    : [];
+  const selectedPairBase = pairReady
+    ? selectedProduct.bases.find((base) => base.id === `dupla-${orderedPairIds[0]}--${orderedPairIds[1]}`)
+    : null;
+  const cartBase = pairOptions.length ? selectedPairBase : selectedBase;
+  const basePrice = cartBase?.price || 0;
   const extrasTotal = selectedExtras.reduce((acc, curr) => acc + (curr.price || 0), 0);
   const unitPrice = selectedProduct.price + basePrice + extrasTotal;
   const totalPrice = unitPrice * quantity;
 
   const handleAddToCart = () => {
-    addToCart(selectedProduct, selectedBase, selectedExtras, notes, quantity);
+    if (selectedProduct.available === false) return;
+    if (pairOptions.length && !selectedPairBase) return;
+    addToCart(selectedProduct, cartBase, selectedExtras, notes, quantity);
     openCart();
   };
 
@@ -97,6 +111,8 @@ export function ProductModal() {
                 {selectedProduct.description}
               </p>
 
+              {selectedProduct.available === false && <p className="mt-3 rounded-lg bg-rose-50 px-3 py-2 text-xs font-semibold text-rose-700">Este produto está indisponível no momento.</p>}
+
               {selectedProduct.ingredients && (
                 <div className="mt-3 p-3 bg-surface-50 rounded-lg border border-stone-200/80 text-xs text-stone-600">
                   <strong className="text-stone-800 font-semibold">Composição: </strong>
@@ -106,11 +122,50 @@ export function ProductModal() {
             </div>
 
             {/* Seleção de Base */}
-            {selectedProduct.bases && selectedProduct.bases.length > 0 && (
+            {pairOptions.length > 0 && (
+              <div className="pt-2 border-t border-stone-100">
+                <div className="mb-2.5 flex items-center justify-between">
+                  <label className="text-xs font-bold uppercase tracking-wide text-stone-800">Monte sua dupla</label>
+                  <span className="text-[11px] font-medium text-stone-500">Escolha 2 batidas</span>
+                </div>
+                <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+                  {pairSelections.map((selection, index) => (
+                    <label key={index} className="block min-w-0">
+                      <span className="mb-1.5 block text-xs font-medium text-stone-700">Batida {index + 1}</span>
+                      <select
+                        value={selection}
+                        onChange={(event) => setPairSelections((previous) => previous.map((value, pairIndex) => pairIndex === index ? event.target.value : value))}
+                        className="w-full rounded-lg border border-stone-200 bg-white px-3 py-2.5 text-xs text-stone-800 outline-none transition focus:border-primary focus:ring-2 focus:ring-primary/10"
+                        aria-label={`Escolha a batida ${index + 1} da dupla`}
+                      >
+                        <option value="">Selecione um sabor</option>
+                        {pairOptions.map((option) => <option key={option.id} value={option.id}>{option.name}</option>)}
+                      </select>
+                    </label>
+                  ))}
+                </div>
+                {pairReady && (
+                  <div className="mt-3 rounded-xl border border-primary/20 bg-primary-light/60 p-3">
+                    <p className="text-xs font-semibold text-stone-800">
+                      Dupla escolhida: {pairSelections[0] === pairSelections[1]
+                        ? `2x ${selectedPairOptions[0].name}`
+                        : `${selectedPairOptions[0].name} + ${selectedPairOptions[1].name}`}
+                    </p>
+                    <div className="mt-2 flex gap-2">
+                      {selectedPairOptions.map((option, index) => (
+                        <img key={`${option.id}-${index}`} src={option.image} alt={option.name} className="h-12 w-12 rounded-lg border border-white object-cover shadow-subtle" />
+                      ))}
+                    </div>
+                  </div>
+                )}
+              </div>
+            )}
+
+            {pairOptions.length === 0 && selectedProduct.bases && selectedProduct.bases.length > 1 && (
               <div className="pt-2 border-t border-stone-100">
                 <div className="flex items-center justify-between mb-2.5">
                   <label className="text-xs font-bold text-stone-800 uppercase tracking-wide">
-                    Escolha a Base
+                    Escolha a opção
                   </label>
                   <span className="text-[11px] text-stone-500 font-medium">1 opção obrigatória</span>
                 </div>
@@ -250,9 +305,10 @@ export function ProductModal() {
           <button
             type="button"
             onClick={handleAddToCart}
-            className="flex-1 bg-primary hover:bg-primary-hover text-white py-3 px-4 rounded-lg font-semibold text-xs sm:text-sm flex items-center justify-between shadow-subtle transition-colors duration-150 active:scale-[0.99]"
+            disabled={selectedProduct.available === false || (pairOptions.length > 0 && (!pairReady || !selectedPairBase))}
+            className="flex-1 bg-primary hover:bg-primary-hover text-white py-3 px-4 rounded-lg font-semibold text-xs sm:text-sm flex items-center justify-between shadow-subtle transition-colors duration-150 active:scale-[0.99] disabled:cursor-not-allowed disabled:opacity-50"
           >
-            <span>Adicionar ao Carrinho</span>
+            <span>{selectedProduct.available === false ? 'Indisponível' : 'Adicionar ao Carrinho'}</span>
             <span className="font-bold">
               {formatCurrency(totalPrice)}
             </span>

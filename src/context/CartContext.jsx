@@ -1,16 +1,52 @@
 import React, { createContext, useContext, useState, useEffect, useMemo, useRef } from 'react';
-import { STORE_CONFIG } from '../config/storeConfig';
+import { PRODUCTS } from '../data/products';
+import { useAuth } from './AuthContext';
 
 const CartContext = createContext();
 
 const CART_STORAGE_KEY = 'salencar_delivery_cart_v1';
+const activeProductsById = new Map(PRODUCTS.map((product) => [product.id, product]));
+
+function sanitizeCartItems(savedItems) {
+  if (!Array.isArray(savedItems)) return [];
+
+  return savedItems.flatMap((item) => {
+    const baseProduct = activeProductsById.get(item?.product?.id);
+    if (!baseProduct) return [];
+    const override = readStorage(KEYS.products, {})[baseProduct.id] || {};
+    if (override.active === false || override.available === false) return [];
+    const product = { ...baseProduct, ...(override.price !== undefined && override.price !== '' ? { price: Number(override.price) } : {}) };
+
+    const base = item.base
+      ? product.bases?.find((option) => option.id === item.base.id)
+        || (product.pairOptions ? product.bases?.find((option) => option.name === item.base.name) : null)
+      : product.bases?.length === 1 ? product.bases[0] : null;
+    if (item.base && !base) return [];
+
+    const allowedExtras = new Map((product.extras || []).map((extra) => [extra.id, extra]));
+    const extras = (item.extras || []).map((extra) => allowedExtras.get(extra.id)).filter(Boolean);
+    const quantity = Math.max(1, Number(item.quantity) || 1);
+    const unitPrice = product.price + (base?.price || 0) + extras.reduce((sum, extra) => sum + (extra.price || 0), 0);
+
+    return [{
+      ...item,
+      product,
+      base: base || null,
+      extras,
+      quantity,
+      unitPrice,
+      totalPrice: unitPrice * quantity,
+    }];
+  });
+}
 
 export function CartProvider({ children }) {
+  const { settings } = useAuth();
   // Inicialização com localStorage
   const [items, setItems] = useState(() => {
     try {
       const saved = localStorage.getItem(CART_STORAGE_KEY);
-      return saved ? JSON.parse(saved) : [];
+      return saved ? sanitizeCartItems(JSON.parse(saved)) : [];
     } catch (e) {
       console.error('Erro ao recuperar carrinho do localStorage:', e);
       return [];
@@ -130,11 +166,11 @@ export function CartProvider({ children }) {
     );
   }, [items]);
 
-  const isFreeDelivery = subtotal >= STORE_CONFIG.freeDeliveryThreshold;
-  const deliveryFee = deliveryType === 'pickup' ? 0 : (isFreeDelivery ? 0 : STORE_CONFIG.deliveryFee);
+  const isFreeDelivery = subtotal >= settings.freeDeliveryThreshold;
+  const deliveryFee = deliveryType === 'pickup' ? 0 : (isFreeDelivery ? 0 : settings.deliveryFee);
   const total = subtotal + deliveryFee;
-  const amountToFreeDelivery = Math.max(0, STORE_CONFIG.freeDeliveryThreshold - subtotal);
-  const freeDeliveryProgress = Math.min(100, Math.round((subtotal / STORE_CONFIG.freeDeliveryThreshold) * 100));
+  const amountToFreeDelivery = Math.max(0, settings.freeDeliveryThreshold - subtotal);
+  const freeDeliveryProgress = Math.min(100, Math.round((subtotal / settings.freeDeliveryThreshold) * 100));
 
   return (
     <CartContext.Provider

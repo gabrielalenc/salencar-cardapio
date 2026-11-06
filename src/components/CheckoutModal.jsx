@@ -1,11 +1,11 @@
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import {
   ArrowLeft, ArrowRight, Banknote, Check, CreditCard, Loader2, MapPin,
-  QrCode, Send, Store, Truck, X,
+  LogIn, QrCode, Send, Store, Truck, X,
 } from 'lucide-react';
 import { useCart } from '../context/CartContext';
-import { STORE_CONFIG } from '../config/storeConfig';
 import { formatCurrency, formatPhone, formatCEP, fetchAddressByCEP } from '../utils/formatters';
+import { useAuth } from '../context/AuthContext';
 
 const steps = ['Endereço', 'Pagamento', 'Revisão'];
 
@@ -33,11 +33,12 @@ function PaymentOption({ value, label, icon: Icon, selected, onSelect }) {
   );
 }
 
-export function CheckoutModal({ onOrderSuccess }) {
+export function CheckoutModal({ onOrderSuccess, onRequestAuth }) {
   const {
     isCheckoutOpen, closeCheckout, items, subtotal, deliveryFee, total,
     deliveryType, setDeliveryType, clearCart,
   } = useCart();
+  const { currentUser, recordOrder, settings } = useAuth();
   const [step, setStep] = useState(1);
   const [formData, setFormData] = useState({
     name: '', phone: '', cep: '', street: '', number: '', complement: '',
@@ -49,7 +50,29 @@ export function CheckoutModal({ onOrderSuccess }) {
   const [formErrors, setFormErrors] = useState({});
   const [isSubmitting, setIsSubmitting] = useState(false);
 
+  useEffect(() => {
+    if (currentUser?.role === 'customer') {
+      setFormData((previous) => ({
+        ...previous,
+        name: previous.name || currentUser.name,
+        phone: previous.phone || (currentUser.phone ? formatPhone(currentUser.phone) : ''),
+      }));
+    }
+  }, [currentUser]);
+
   if (!isCheckoutOpen) return null;
+
+  if (currentUser?.role !== 'customer') return (
+    <div className="fixed inset-0 z-[60] flex items-center justify-center bg-stone-950/55 p-3 backdrop-blur-sm" onClick={closeCheckout}>
+      <section role="dialog" aria-modal="true" aria-labelledby="checkout-auth-title" className="w-full max-w-md rounded-2xl border border-stone-200 bg-white p-6 text-center shadow-elevated" onClick={(event) => event.stopPropagation()}>
+        <div className="mx-auto flex h-12 w-12 items-center justify-center rounded-2xl bg-primary-light text-primary"><LogIn className="h-5 w-5" /></div>
+        <h2 id="checkout-auth-title" className="mt-4 text-lg font-bold text-stone-900">Entre para finalizar seu pedido</h2>
+        <p className="mt-2 text-sm leading-relaxed text-stone-500">Sua conta permite acompanhar o histórico e ajuda a identificar o pedido no painel da Salencar.</p>
+        <div className="mt-5 grid grid-cols-2 gap-2"><button type="button" onClick={() => onRequestAuth('login')} className="rounded-xl bg-primary px-3 py-3 text-sm font-semibold text-white hover:bg-primary-hover">Entrar</button><button type="button" onClick={() => onRequestAuth('register')} className="rounded-xl border border-stone-200 px-3 py-3 text-sm font-semibold text-stone-700 hover:bg-stone-50">Criar conta</button></div>
+        <button type="button" onClick={closeCheckout} className="mt-4 text-xs font-medium text-stone-400 hover:text-stone-700">Voltar ao carrinho</button>
+      </section>
+    </div>
+  );
 
   const change = (field, value) => {
     setFormData((prev) => ({ ...prev, [field]: value }));
@@ -102,21 +125,21 @@ export function CheckoutModal({ onOrderSuccess }) {
   };
 
   const paymentLabel = { pix: 'Pix', money: 'Dinheiro', credit: 'Cartão de crédito', debit: 'Cartão de débito' }[formData.paymentMethod];
-  const buildWhatsAppMessage = () => {
+  const buildWhatsAppMessage = (orderId) => {
     const products = items.map((item) => {
       const details = [item.base?.name, ...(item.extras || []).map((extra) => `Adicional: ${extra.name}`)].filter(Boolean);
       return `• ${item.quantity}x ${item.product.name}${details.length ? ` (${details.join(', ')})` : ''}\n  ${formatCurrency(item.totalPrice)}${item.notes ? `\n  Obs.: ${item.notes}` : ''}`;
     }).join('\n');
     const address = deliveryType === 'delivery'
       ? `${formData.street}, ${formData.number}${formData.complement ? `, ${formData.complement}` : ''}\n${formData.neighborhood}, ${formData.city} — CEP ${formData.cep}${formData.reference ? `\nReferência: ${formData.reference}` : ''}`
-      : `Retirada no balcão — ${STORE_CONFIG.pickupAddress}`;
+      : `Retirada no balcão — ${settings.pickupAddress}`;
     const changeInfo = formData.paymentMethod !== 'money'
       ? ''
       : formData.needsChange === 'sim'
         ? `\nTroco para ${formatCurrency(Number(formData.changeFor.replace(',', '.')))} (troco estimado: ${formatCurrency(Number(formData.changeFor.replace(',', '.')) - total)})`
         : '\nSem necessidade de troco (valor exato)';
     const itemNotes = formData.orderNotes.trim() ? `\nObservações do pedido: ${formData.orderNotes.trim()}` : '';
-    return `NOVO PEDIDO — ${STORE_CONFIG.name}\n\nCliente: ${formData.name.trim()}\nWhatsApp: ${formData.phone.trim()}\n\nENDEREÇO\n${address}\n\nITENS\n${products}\n\nSubtotal: ${formatCurrency(subtotal)}\nEntrega: ${deliveryType === 'pickup' ? 'Retirada sem taxa' : deliveryFee === 0 ? 'Grátis' : formatCurrency(deliveryFee)}\nTOTAL: ${formatCurrency(total)}\n\nPagamento: ${paymentLabel}${changeInfo}${formData.paymentMethod === 'pix' ? `\nChave Pix: ${STORE_CONFIG.pix.key}` : ''}${itemNotes}\n\nAgradeço pela preferência!`;
+    return `NOVO PEDIDO — ${settings.name}\n${orderId ? `Pedido: ${orderId}\n` : ''}\nCliente: ${formData.name.trim()}\nE-mail: ${currentUser.email}\nWhatsApp: ${formData.phone.trim()}\n\nENDEREÇO\n${address}\n\nITENS\n${products}\n\nSubtotal: ${formatCurrency(subtotal)}\nEntrega: ${deliveryType === 'pickup' ? 'Retirada sem taxa' : deliveryFee === 0 ? 'Grátis' : formatCurrency(deliveryFee)}\nTOTAL: ${formatCurrency(total)}\n\nPagamento: ${paymentLabel}${changeInfo}${formData.paymentMethod === 'pix' ? `\nChave Pix: ${settings.pix.key}` : ''}${itemNotes}\n\nAgradeço pela preferência!`;
   };
 
   const handleFinishOrder = (event) => {
@@ -128,10 +151,32 @@ export function CheckoutModal({ onOrderSuccess }) {
     }
     setIsSubmitting(true);
     try {
-      const message = buildWhatsAppMessage();
-      const whatsappUrl = `https://wa.me/${STORE_CONFIG.whatsappNumber}?text=${encodeURIComponent(message)}`;
+      const savedOrder = recordOrder({
+        customerName: formData.name.trim(),
+        phone: formData.phone.trim(),
+        items: items.map((item) => ({
+          productId: item.product.id,
+          productName: item.product.name,
+          productImage: item.product.image,
+          option: item.base?.name || '',
+          extras: (item.extras || []).map((extra) => extra.name),
+          quantity: item.quantity,
+          unitPrice: item.unitPrice,
+          totalPrice: item.totalPrice,
+        })),
+        subtotal,
+        deliveryFee,
+        total,
+        deliveryType,
+        address: deliveryType === 'delivery' ? `${formData.street}, ${formData.number}${formData.complement ? `, ${formData.complement}` : ''}; ${formData.neighborhood}, ${formData.city}; CEP ${formData.cep}${formData.reference ? `; Referência: ${formData.reference}` : ''}` : settings.pickupAddress,
+        paymentMethod: paymentLabel,
+        orderNotes: formData.orderNotes.trim(),
+      });
+      if (!savedOrder) throw new Error('Entre em uma conta de cliente para registrar o pedido.');
+      const message = buildWhatsAppMessage(savedOrder.id);
+      const whatsappUrl = `https://wa.me/${settings.whatsappNumber}?text=${encodeURIComponent(message)}`;
       window.open(whatsappUrl, '_blank', 'noopener,noreferrer');
-      onOrderSuccess?.({ customer: formData.name, phone: formData.phone, items: [...items], total, whatsappUrl, message, paymentMethod: formData.paymentMethod });
+      onOrderSuccess?.({ customer: formData.name, phone: formData.phone, items: [...items], total, whatsappUrl, message, paymentMethod: formData.paymentMethod, orderId: savedOrder.id });
       clearCart();
       closeCheckout();
     } catch (err) {
@@ -206,14 +251,14 @@ export function CheckoutModal({ onOrderSuccess }) {
               <div><h3 className="font-semibold text-stone-900">Como deseja pagar?</h3><p className="mt-1 text-sm text-stone-500">O pagamento será combinado na entrega ou retirada.</p></div>
               <div className="grid gap-3 sm:grid-cols-2"><PaymentOption value="money" label="Dinheiro" icon={Banknote} selected={formData.paymentMethod === 'money'} onSelect={(value) => change('paymentMethod', value)} /><PaymentOption value="pix" label="Pix" icon={QrCode} selected={formData.paymentMethod === 'pix'} onSelect={(value) => change('paymentMethod', value)} /><PaymentOption value="credit" label="Cartão de crédito" icon={CreditCard} /><PaymentOption value="debit" label="Cartão de débito" icon={CreditCard} /></div>
               {formData.paymentMethod === 'money' && <section className="space-y-4 rounded-xl bg-stone-50 p-4"><h4 className="text-sm font-semibold text-stone-800">Precisa de troco?</h4><div className="grid grid-cols-2 gap-3"><button type="button" onClick={() => change('needsChange', 'nao')} aria-pressed={formData.needsChange === 'nao'} className={`rounded-lg border px-3 py-3 text-sm ${formData.needsChange === 'nao' ? 'border-primary bg-white text-primary' : 'border-stone-200 bg-white text-stone-600'}`}>Não, valor exato</button><button type="button" onClick={() => change('needsChange', 'sim')} aria-pressed={formData.needsChange === 'sim'} className={`rounded-lg border px-3 py-3 text-sm ${formData.needsChange === 'sim' ? 'border-primary bg-white text-primary' : 'border-stone-200 bg-white text-stone-600'}`}>Sim, preciso</button></div>{formData.needsChange === 'sim' && <label className="block"><span className="mb-1.5 block text-xs font-medium text-stone-700">Troco para quanto?</span><span className="flex items-center gap-2"><span className="text-sm text-stone-500">R$</span><input inputMode="decimal" value={formData.changeFor} onChange={(event) => change('changeFor', event.target.value)} placeholder="50,00" className={inputClass('changeFor')} /></span>{formErrors.changeFor && <span className="mt-1 block text-xs text-rose-600">{formErrors.changeFor}</span>}</label>}</section>}
-              {formData.paymentMethod === 'pix' && <p className="rounded-xl bg-stone-50 p-4 text-sm text-stone-600">A chave Pix ({STORE_CONFIG.pix.key}) será enviada junto com os dados do pedido.</p>}
+              {formData.paymentMethod === 'pix' && <p className="rounded-xl bg-stone-50 p-4 text-sm text-stone-600">A chave Pix ({settings.pix.key}) será enviada junto com os dados do pedido.</p>}
               {(formData.paymentMethod === 'credit' || formData.paymentMethod === 'debit') && <p className="rounded-xl bg-stone-50 p-4 text-sm text-stone-600">O entregador levará a maquininha no momento da entrega.</p>}
               <section className="rounded-xl border border-stone-200 p-4"><div className="flex justify-between text-sm text-stone-500"><span>Total do pedido</span><span className="font-semibold text-stone-900">{formatCurrency(total)}</span></div></section>
             </>}
 
             {step === 3 && <>
               <div><h3 className="font-semibold text-stone-900">Confira seu pedido</h3><p className="mt-1 text-sm text-stone-500">Revise os dados antes de enviar pelo WhatsApp.</p></div>
-              <section className="space-y-3 rounded-xl bg-stone-50 p-4"><div><h4 className="text-xs font-semibold uppercase tracking-wide text-stone-500">Cliente</h4><p className="mt-1 text-sm text-stone-800">{formData.name} · {formData.phone}</p></div><div className="border-t border-stone-200 pt-3"><h4 className="text-xs font-semibold uppercase tracking-wide text-stone-500">{deliveryType === 'delivery' ? 'Endereço' : 'Retirada'}</h4><p className="mt-1 whitespace-pre-line text-sm text-stone-800">{deliveryType === 'delivery' ? `${formData.street}, ${formData.number}${formData.complement ? `, ${formData.complement}` : ''}\n${formData.neighborhood}, ${formData.city} — CEP ${formData.cep}${formData.reference ? `\nReferência: ${formData.reference}` : ''}` : STORE_CONFIG.pickupAddress}</p></div><div className="border-t border-stone-200 pt-3"><h4 className="text-xs font-semibold uppercase tracking-wide text-stone-500">Pagamento</h4><p className="mt-1 text-sm text-stone-800">{paymentLabel}{formData.paymentMethod === 'money' ? formData.needsChange === 'sim' ? ` · Troco para ${formatCurrency(Number(formData.changeFor.replace(',', '.')))} (devolver ${formatCurrency(Number(formData.changeFor.replace(',', '.')) - total)})` : ' · Valor exato' : ''}</p></div></section>
+              <section className="space-y-3 rounded-xl bg-stone-50 p-4"><div><h4 className="text-xs font-semibold uppercase tracking-wide text-stone-500">Cliente</h4><p className="mt-1 text-sm text-stone-800">{formData.name} · {formData.phone}</p></div><div className="border-t border-stone-200 pt-3"><h4 className="text-xs font-semibold uppercase tracking-wide text-stone-500">{deliveryType === 'delivery' ? 'Endereço' : 'Retirada'}</h4><p className="mt-1 whitespace-pre-line text-sm text-stone-800">{deliveryType === 'delivery' ? `${formData.street}, ${formData.number}${formData.complement ? `, ${formData.complement}` : ''}\n${formData.neighborhood}, ${formData.city} — CEP ${formData.cep}${formData.reference ? `\nReferência: ${formData.reference}` : ''}` : settings.pickupAddress}</p></div><div className="border-t border-stone-200 pt-3"><h4 className="text-xs font-semibold uppercase tracking-wide text-stone-500">Pagamento</h4><p className="mt-1 text-sm text-stone-800">{paymentLabel}{formData.paymentMethod === 'money' ? formData.needsChange === 'sim' ? ` · Troco para ${formatCurrency(Number(formData.changeFor.replace(',', '.')))} (devolver ${formatCurrency(Number(formData.changeFor.replace(',', '.')) - total)})` : ' · Valor exato' : ''}</p></div></section>
               <section className="rounded-xl border border-stone-200 p-4"><h4 className="mb-3 text-sm font-semibold text-stone-800">Produtos</h4><div className="space-y-4">{items.map((item) => <div key={item.cartKey} className="flex justify-between gap-3 text-sm"><div><p className="font-medium text-stone-800">{item.quantity}x {item.product.name}{item.base ? ` — ${item.base.name}` : ''}</p>{item.extras?.length > 0 && <p className="mt-1 text-xs text-stone-500">Adicionais: {item.extras.map((extra) => extra.name).join(', ')}</p>}{item.notes && <p className="mt-1 text-xs text-stone-500">Observação: {item.notes}</p>}</div><span className="shrink-0 font-medium text-stone-700">{formatCurrency(item.totalPrice)}</span></div>)}</div><label className="mt-4 block border-t border-stone-100 pt-4"><span className="mb-1.5 block text-xs font-medium text-stone-700">Observação para o pedido (opcional)</span><textarea rows={2} value={formData.orderNotes} onChange={(event) => change('orderNotes', event.target.value)} placeholder="Instruções para a entrega..." className={inputClass('orderNotes')} /></label><div className="mt-4 space-y-2 border-t border-stone-100 pt-3 text-sm"><div className="flex justify-between text-stone-500"><span>Subtotal</span><span>{formatCurrency(subtotal)}</span></div><div className="flex justify-between text-stone-500"><span>Entrega</span><span>{deliveryType === 'pickup' ? 'Retirada sem taxa' : deliveryFee === 0 ? 'Grátis' : formatCurrency(deliveryFee)}</span></div><div className="flex justify-between border-t border-stone-100 pt-3 text-base font-semibold text-stone-900"><span>Total</span><span>{formatCurrency(total)}</span></div></div></section>
             </>}
           </main>
