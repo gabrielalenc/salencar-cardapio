@@ -39,10 +39,10 @@ Para Google, em **Authentication → Providers → Google**, ative o provedor e 
 
 No painel da Vercel, adicione em **Settings → Environment Variables**:
 
-- `VITE_SUPABASE_URL`: Project URL de **Project Settings → API**.
-- `VITE_SUPABASE_ANON_KEY`: publishable key (ou anon key legada) de **Project Settings → API**.
+- `vite_supabase_url`: Project URL de **Project Settings → API**.
+- `vite_supabase_anon_key`: publishable key (ou anon key legada) de **Project Settings → API**.
 
-Adicione-as aos ambientes Production, Preview e Development conforme necessário e faça novo deploy. Para desenvolvimento local, copie `.env.example` para `.env.local` e preencha os mesmos dois valores. Essas chaves públicas são protegidas por RLS; nunca adicione a `service_role` ao frontend.
+Adicione-as aos ambientes Production, Preview e Development conforme necessário e faça novo deploy. O Vite expõe os nomes em minúsculas com o prefixo `vite_supabase_`. Para desenvolvimento local, copie `.env.example` para `.env.local` e preencha os mesmos dois valores. Essas chaves públicas são protegidas por RLS; nunca adicione a `service_role` ao frontend.
 
 ## 5. Dados locais antigos
 
