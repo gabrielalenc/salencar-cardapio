@@ -31,8 +31,14 @@ function DeliveryApp() {
   const [adminOpen, setAdminOpen] = useState(false);
   const [trackingOpen, setTrackingOpen] = useState(false);
   const { openProductDetails, addToCart, openCheckout, addedProductName } = useCart();
-  const { currentUser, productSettings, inventory, stockAvailability } = useAuth();
+  const { currentUser, productSettings, inventory, stockAvailability, passwordRecoveryPending } = useAuth();
   const menuSectionRef = useRef(null);
+
+  useEffect(() => {
+    if (!passwordRecoveryPending) return;
+    setAccountMode('password-reset');
+    setAccountOpen(true);
+  }, [passwordRecoveryPending]);
 
   const activeProducts = useMemo(() => PRODUCTS
     .filter((product) => productSettings[product.id]?.active !== false)

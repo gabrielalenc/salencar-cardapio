@@ -1,8 +1,8 @@
 import React, { createContext, useCallback, useContext, useEffect, useMemo, useState } from 'react';
 import { PRODUCTS } from '../data/products';
 import { STORE_CONFIG } from '../config/storeConfig';
-import { ADMIN_CREDENTIALS } from '../config/adminConfig';
 import { dedupeOrders } from '../utils/orders';
+import { getSupabaseConfigError, isSupabaseConfigured, supabase } from '../lib/supabase';
 
 const AuthContext = createContext(null);
 const KEYS = {
@@ -142,140 +142,190 @@ function readStoreSettings() {
   };
 }
 
+function paymentLabel(method) { return ({ pix: 'Pix', money: 'Dinheiro', credit: 'Cartão de crédito', debit: 'Cartão de débito' })[method] || method || ''; }
+function formatAddress(address = {}) {
+  if (typeof address === 'string') return address;
+  const street = [address.street, address.number].filter(Boolean).join(', ');
+  const extra = [address.complement, address.neighborhood, address.city].filter(Boolean).join(', ');
+  return [street, extra, address.postal_code ? `CEP ${address.postal_code}` : '', address.reference ? `Ref.: ${address.reference}` : ''].filter(Boolean).join(' — ');
+}
+function mapOrder(row) {
+  return { id: row.order_number, databaseId: row.id, customerId: row.customer_id, customerName: row.customer_name, customerEmail: row.customer_email, phone: row.phone, status: row.status, subtotal: Number(row.subtotal), deliveryFee: Number(row.delivery_fee), total: Number(row.total), deliveryType: row.delivery_type, address: formatAddress(row.address_snapshot), addressSnapshot: row.address_snapshot, paymentMethod: paymentLabel(row.payment_method), paymentMethodId: row.payment_method, orderNotes: row.order_notes, createdAt: row.created_at, updatedAt: row.updated_at, items: (row.order_items || []).map((item) => ({ productId: item.product_id, productName: item.product_name, productImage: item.product_image, baseId: item.base_id, option: item.option, extras: item.extras || [], quantity: item.quantity, unitPrice: Number(item.unit_price), totalPrice: Number(item.total_price) })) };
+}
+
 export function AuthProvider({ children }) {
-  const [users, setUsers] = useState(() => {
-    const saved = readStorage(KEYS.users, []);
-    return Array.isArray(saved) ? saved : [];
-  });
-  const [currentUser, setCurrentUser] = useState(() => readStorage(KEYS.session, null));
-  const [orders, setOrders] = useState(() => {
-    const saved = readStorage(KEYS.orders, []);
-    return dedupeOrders(saved);
-  });
+  const [currentUser, setCurrentUser] = useState(null);
+  const [authLoading, setAuthLoading] = useState(true);
+  const [passwordRecoveryPending, setPasswordRecoveryPending] = useState(false);
+  const [users, setUsers] = useState([]);
+  const [addresses, setAddresses] = useState([]);
+  const [paymentPreference, setPaymentPreference] = useState('pix');
+  const [orders, setOrders] = useState([]);
   const [demoOrders, setDemoOrders] = useState(readOrSeedDemoOrders);
   const [productSettings, setProductSettings] = useState(() => readStorage(KEYS.products, {}) || {});
   const [inventory, setInventory] = useState(() => createInventory(readStorage(KEYS.inventory, {})));
   const [settings, setSettings] = useState(readStoreSettings);
-
-  useEffect(() => writeStorage(KEYS.users, users), [users]);
-  useEffect(() => writeStorage(KEYS.session, currentUser), [currentUser]);
-  useEffect(() => writeStorage(KEYS.orders, orders), [orders]);
-  useEffect(() => writeStorage(KEYS.demoOrders, demoOrders), [demoOrders]);
+  useEffect(() => { try { localStorage.removeItem(KEYS.session); } catch { /* localStorage não é necessário para autenticação */ } }, []);
   useEffect(() => writeStorage(KEYS.products, productSettings), [productSettings]);
+  useEffect(() => writeStorage(KEYS.demoOrders, demoOrders), [demoOrders]);
   useEffect(() => writeStorage(KEYS.inventory, inventory), [inventory]);
   useEffect(() => {
     const { deliveryFee, freeDeliveryThreshold, estimatedDeliveryTime, minimumOrder, ...publicSettings } = settings;
     writeStorage(KEYS.settings, publicSettings);
   }, [settings]);
 
-  useEffect(() => {
-    const syncOrders = (event) => {
-      if (event.key !== KEYS.orders) return;
-      try {
-        const savedOrders = event.newValue ? JSON.parse(event.newValue) : [];
-        if (Array.isArray(savedOrders)) setOrders(dedupeOrders(savedOrders));
-      } catch {
-        // Ignore malformed values and keep the current in-memory orders.
-      }
-    };
-    window.addEventListener('storage', syncOrders);
-    return () => window.removeEventListener('storage', syncOrders);
+  const loadAccountData = useCallback(async (authUser) => {
+    if (!authUser || !supabase) { setCurrentUser(null); setAddresses([]); setOrders([]); setUsers([]); return null; }
+    const { data: profile, error: profileError } = await supabase.from('profiles').select('*').eq('id', authUser.id).maybeSingle();
+    if (profileError) throw profileError;
+    if (!profile) throw new Error('Perfil não encontrado. Confira se a migration do Supabase foi executada.');
+    const user = { id: authUser.id, name: profile.full_name || authUser.user_metadata?.full_name || authUser.user_metadata?.name || '', email: profile.email || authUser.email || '', phone: profile.phone || '', role: profile.role, createdAt: profile.created_at };
+    setCurrentUser(user);
+    const [addressResult, preferenceResult, orderResult] = await Promise.all([
+      user.role === 'customer' ? supabase.from('addresses').select('*').eq('user_id', user.id).order('is_default', { ascending: false }).order('created_at') : Promise.resolve({ data: [], error: null }),
+      supabase.from('customer_preferences').select('payment_method').eq('user_id', user.id).maybeSingle(),
+      supabase.from('orders').select('*, order_items(*)').order('created_at', { ascending: false }),
+    ]);
+    for (const result of [addressResult, preferenceResult, orderResult]) if (result.error) throw result.error;
+    setAddresses(addressResult.data || []); setPaymentPreference(preferenceResult.data?.payment_method || 'pix');
+    setOrders(dedupeOrders((orderResult.data || []).map(mapOrder)));
+    if (user.role === 'admin') {
+      const { data, error } = await supabase.from('profiles').select('id,full_name,email,phone,created_at,role').eq('role', 'customer').order('created_at', { ascending: false });
+      if (error) throw error;
+      setUsers((data || []).map((person) => ({ id: person.id, name: person.full_name, email: person.email, phone: person.phone, createdAt: person.created_at, role: person.role })));
+    } else setUsers([]);
+    return user;
   }, []);
 
-  const login = useCallback((email, password) => {
-    const normalizedEmail = email.trim().toLowerCase();
-    if (normalizedEmail === ADMIN_CREDENTIALS.email) {
-      if (password !== ADMIN_CREDENTIALS.password) return { ok: false, error: 'E-mail ou senha incorretos.' };
-      const admin = { id: 'salencar-admin', name: 'Administrador', email: ADMIN_CREDENTIALS.email, role: 'admin' };
-      setCurrentUser(admin);
-      return { ok: true, user: admin };
+  useEffect(() => {
+    let active = true;
+    if (!isSupabaseConfigured) { setAuthLoading(false); return undefined; }
+    supabase.auth.getSession().then(async ({ data, error }) => {
+      if (error) throw error;
+      if (data.session && active) await loadAccountData(data.session.user);
+    }).catch((error) => console.error('Falha ao recuperar sessão Supabase:', error)).finally(() => { if (active) setAuthLoading(false); });
+    const { data: listener } = supabase.auth.onAuthStateChange((event, session) => {
+      if (!active) return;
+      if (event === 'PASSWORD_RECOVERY') setPasswordRecoveryPending(true);
+      if (!session) { setCurrentUser(null); setAddresses([]); setOrders([]); setUsers([]); setPasswordRecoveryPending(false); setAuthLoading(false); return; }
+      setAuthLoading(true);
+      window.setTimeout(() => loadAccountData(session.user).catch((error) => console.error('Falha ao carregar conta:', error)).finally(() => { if (active) setAuthLoading(false); }), 0);
+    });
+    return () => { active = false; listener.subscription.unsubscribe(); };
+  }, [loadAccountData]);
+
+  useEffect(() => {
+    if (!currentUser || !supabase) return undefined;
+    const channel = supabase.channel(`salencar-orders-${currentUser.id}`).on('postgres_changes', { event: '*', schema: 'public', table: 'orders' }, () => {
+      supabase.from('orders').select('*, order_items(*)').order('created_at', { ascending: false }).then(({ data, error }) => { if (!error && data) setOrders(dedupeOrders(data.map(mapOrder))); });
+    }).subscribe();
+    return () => { supabase.removeChannel(channel); };
+  }, [currentUser?.id]);
+
+  const login = useCallback(async (email, password) => {
+    if (!supabase) return { ok: false, error: getSupabaseConfigError() };
+    const { data, error } = await supabase.auth.signInWithPassword({ email: email.trim().toLowerCase(), password });
+    if (error) return { ok: false, error: error.message };
+    try { return { ok: true, user: await loadAccountData(data.user) }; } catch (cause) { await supabase.auth.signOut(); return { ok: false, error: cause.message }; }
+  }, [loadAccountData]);
+  const register = useCallback(async ({ name, email, password }) => {
+    if (!supabase) return { ok: false, error: getSupabaseConfigError() };
+    const { data, error } = await supabase.auth.signUp({ email: email.trim().toLowerCase(), password, options: { data: { full_name: name.trim() }, emailRedirectTo: window.location.origin } });
+    if (error) return { ok: false, error: error.message };
+    if (!data.session) return { ok: true, confirmationRequired: true };
+    try { return { ok: true, user: await loadAccountData(data.user) }; } catch (cause) { return { ok: false, error: cause.message }; }
+  }, [loadAccountData]);
+  const loginWithGoogle = useCallback(async () => {
+    if (!supabase) return { ok: false, error: getSupabaseConfigError() };
+    const { error } = await supabase.auth.signInWithOAuth({ provider: 'google', options: { redirectTo: window.location.origin } });
+    return error ? { ok: false, error: error.message } : { ok: true };
+  }, []);
+  const resetPassword = useCallback(async (email) => {
+    if (!supabase) return { ok: false, error: getSupabaseConfigError() };
+    const { error } = await supabase.auth.resetPasswordForEmail(email.trim().toLowerCase(), { redirectTo: window.location.origin });
+    return error ? { ok: false, error: error.message } : { ok: true };
+  }, []);
+  const changeCustomerPassword = useCallback(async (_current, next) => {
+    if (!currentUser || currentUser.role !== 'customer') return { ok: false, error: 'Entre na sua conta para alterar a senha.' };
+    if (String(next || '').length < 6) return { ok: false, error: 'A nova senha deve ter pelo menos 6 caracteres.' };
+    const { error } = await supabase.auth.updateUser({ password: next });
+    if (!error) setPasswordRecoveryPending(false);
+    return error ? { ok: false, error: error.message } : { ok: true };
+  }, [currentUser]);
+  const logout = useCallback(async () => {
+    if (!supabase) return { ok: false, error: getSupabaseConfigError() };
+    const { error } = await supabase.auth.signOut();
+    return error ? { ok: false, error: error.message } : { ok: true };
+  }, []);
+
+  const saveAddress = useCallback(async (address) => {
+    if (!currentUser || currentUser.role !== 'customer') return { ok: false, error: 'Entre na sua conta para salvar endereços.' };
+    const payload = { ...address, user_id: currentUser.id };
+    if (payload.is_default) {
+      const { error } = await supabase.from('addresses').update({ is_default: false }).eq('user_id', currentUser.id).eq('is_default', true);
+      if (error) return { ok: false, error: error.message };
     }
-    const user = users.find((entry) => entry.email.toLowerCase() === normalizedEmail && entry.password === password);
-    if (!user) return { ok: false, error: 'E-mail ou senha incorretos.' };
-    const session = { id: user.id, name: user.name, email: user.email, phone: user.phone || '', role: 'customer' };
-    setCurrentUser(session);
-    return { ok: true, user: session };
-  }, [users]);
-
-  const register = useCallback(({ name, email, password }) => {
-    const normalizedEmail = email.trim().toLowerCase();
-    if (normalizedEmail === ADMIN_CREDENTIALS.email) return { ok: false, error: 'Este e-mail está reservado para administração.' };
-    if (users.some((entry) => entry.email.toLowerCase() === normalizedEmail)) return { ok: false, error: 'Já existe uma conta com este e-mail.' };
-    const user = {
-      id: `USR-${Date.now().toString(36).toUpperCase()}`,
-      name: name.trim(), email: normalizedEmail, password, phone: '', createdAt: new Date().toISOString(),
-    };
-    setUsers((previous) => [...previous, user]);
-    const session = { id: user.id, name: user.name, email: user.email, phone: '', role: 'customer' };
-    setCurrentUser(session);
-    return { ok: true, user: session };
-  }, [users]);
-
-  const logout = useCallback(() => setCurrentUser(null), []);
-
-  const updateCustomerPhone = useCallback((phone) => {
-    if (!currentUser || currentUser.role !== 'customer') return;
-    setUsers((previous) => previous.map((user) => user.id === currentUser.id ? { ...user, phone } : user));
-    setCurrentUser((previous) => previous ? { ...previous, phone } : previous);
+    const query = payload.id ? supabase.from('addresses').update(payload).eq('id', payload.id).eq('user_id', currentUser.id).select().single() : supabase.from('addresses').insert(payload).select().single();
+    const { data, error } = await query;
+    if (error) return { ok: false, error: error.message };
+    setAddresses((previous) => [...previous.filter((item) => item.id !== data.id && (!data.is_default || !item.is_default)), data].sort((a, b) => Number(b.is_default) - Number(a.is_default)));
+    return { ok: true, address: data };
+  }, [currentUser]);
+  const deleteAddress = useCallback(async (id) => {
+    const { error } = await supabase.from('addresses').delete().eq('id', id).eq('user_id', currentUser?.id);
+    if (error) return { ok: false, error: error.message };
+    setAddresses((previous) => previous.filter((address) => address.id !== id)); return { ok: true };
+  }, [currentUser?.id]);
+  const savePaymentPreference = useCallback(async (method) => {
+    if (!currentUser || !['pix', 'money', 'credit', 'debit'].includes(method)) return { ok: false, error: 'Forma de pagamento inválida.' };
+    const { error } = await supabase.from('customer_preferences').upsert({ user_id: currentUser.id, payment_method: method });
+    if (error) return { ok: false, error: error.message };
+    setPaymentPreference(method); return { ok: true };
+  }, [currentUser?.id]);
+  const updateCustomerProfile = useCallback(async (changes) => {
+    if (!currentUser || currentUser.role !== 'customer') return { ok: false, error: 'Entre na sua conta para editar os dados.' };
+    const profile = { full_name: changes.name?.trim() ?? currentUser.name, phone: changes.phone?.trim() ?? currentUser.phone ?? '' };
+    if (profile.full_name.length < 2) return { ok: false, error: 'Informe seu nome completo.' };
+    const { error } = await supabase.from('profiles').update(profile).eq('id', currentUser.id);
+    if (error) return { ok: false, error: error.message };
+    setCurrentUser((previous) => previous?.id === currentUser.id ? { ...previous, name: profile.full_name, phone: profile.phone } : previous);
+    return { ok: true, user: { ...currentUser, name: profile.full_name, phone: profile.phone } };
   }, [currentUser]);
 
-  const updateCustomerProfile = useCallback((changes) => {
-    if (!currentUser || currentUser.role !== 'customer') return { ok: false, error: 'Entre na sua conta para editar os dados.' };
-    const email = changes.email?.trim().toLowerCase() || currentUser.email;
-    if (email === ADMIN_CREDENTIALS.email) return { ok: false, error: 'Este e-mail é reservado para a administração.' };
-    if (users.some((user) => user.id !== currentUser.id && user.email.toLowerCase() === email)) return { ok: false, error: 'Já existe uma conta com este e-mail.' };
-    const profile = {
-      name: changes.name?.trim() ?? currentUser.name,
-      email,
-      phone: changes.phone?.trim() ?? currentUser.phone ?? '',
-      address: changes.address?.trim() ?? users.find((user) => user.id === currentUser.id)?.address ?? '',
-    };
-    if (profile.name.length < 2) return { ok: false, error: 'Informe seu nome completo.' };
-    setUsers((previous) => previous.map((user) => user.id === currentUser.id ? { ...user, ...profile } : user));
-    setCurrentUser((previous) => previous?.id === currentUser.id ? { ...previous, ...profile } : previous);
-    return { ok: true, user: profile };
-  }, [currentUser, users]);
-
-  const changeCustomerPassword = useCallback((currentPassword, nextPassword) => {
-    if (!currentUser || currentUser.role !== 'customer') return { ok: false, error: 'Entre na sua conta para alterar a senha.' };
-    const user = users.find((entry) => entry.id === currentUser.id);
-    if (!user || user.password !== currentPassword) return { ok: false, error: 'A senha atual está incorreta.' };
-    if (String(nextPassword || '').length < 6) return { ok: false, error: 'A nova senha deve ter pelo menos 6 caracteres.' };
-    setUsers((previous) => previous.map((entry) => entry.id === currentUser.id ? { ...entry, password: nextPassword } : entry));
-    return { ok: true };
-  }, [currentUser, users]);
-
-  const recordOrder = useCallback((order) => {
-    if (!currentUser || currentUser.role !== 'customer') return null;
-    const savedOrder = {
-      ...order,
-      id: `SAL-${Date.now().toString(36).toUpperCase()}-${Math.random().toString(36).slice(2, 7).toUpperCase()}`,
-      customerId: currentUser.id,
-      customerName: order.customerName || currentUser.name,
-      customerEmail: currentUser.email,
-      createdAt: new Date().toISOString(),
-      status: 'new',
-      isDemo: false,
-    };
-    setOrders((previous) => dedupeOrders([savedOrder, ...previous]));
-    updateCustomerProfile({ phone: order.phone, address: order.deliveryType === 'delivery' ? order.address : undefined });
-    return savedOrder;
-  }, [currentUser, updateCustomerProfile]);
-
-  const updateOrderStatus = useCallback((id, status, isDemo = false) => {
-    if (isDemo) {
-      setDemoOrders((previous) => previous.map((order) => order.id === id ? { ...order, status, updatedAt: new Date().toISOString() } : order));
-      return { ok: true };
+  const recordOrder = useCallback(async (order) => {
+    if (!currentUser || currentUser.role !== 'customer') return { ok: false, error: 'Entre em uma conta de cliente para registrar o pedido.' };
+    const paymentId = order.paymentMethodId || ({ Pix: 'pix', Dinheiro: 'money', 'Cartão de crédito': 'credit', 'Cartão de débito': 'debit' })[order.paymentMethod];
+    const profileResult = await updateCustomerProfile({ name: order.customerName || currentUser.name, phone: order.phone });
+    if (!profileResult.ok) return profileResult;
+    if (order.deliveryType === 'delivery' && order.saveAddress) {
+      const addressResult = await saveAddress({ ...order.addressSnapshot, recipient_name: order.customerName || currentUser.name, phone: order.phone, is_default: order.makeDefaultAddress || addresses.length === 0 });
+      if (!addressResult.ok) return addressResult;
     }
+    const preferenceResult = await savePaymentPreference(paymentId);
+    if (!preferenceResult.ok) return preferenceResult;
+    const { data, error } = await supabase.rpc('create_customer_order', {
+      p_order: { customer_name: order.customerName || currentUser.name, phone: order.phone, subtotal: order.subtotal, delivery_fee: order.deliveryFee, total: order.total, delivery_type: order.deliveryType, address_snapshot: order.addressSnapshot || {}, payment_method: paymentId, order_notes: order.orderNotes || '' },
+      p_items: order.items.map((item) => ({ product_id: item.productId, product_name: item.productName, product_image: item.productImage || '', base_id: item.baseId || '', option: item.option || '', extras: item.extras || [], quantity: item.quantity, unit_price: item.unitPrice, total_price: item.totalPrice })),
+    });
+    if (error) return { ok: false, error: error.message };
+    const savedOrder = { ...order, id: data.order_number, databaseId: data.id, customerId: currentUser.id, customerName: order.customerName || currentUser.name, customerEmail: currentUser.email, createdAt: data.created_at, status: data.status, address: formatAddress(order.addressSnapshot), addressSnapshot: order.addressSnapshot || {}, paymentMethodId: paymentId, isDemo: false };
+    setOrders((previous) => dedupeOrders([savedOrder, ...previous]));
+    return { ok: true, order: savedOrder };
+  }, [currentUser, updateCustomerProfile, saveAddress, savePaymentPreference, addresses.length]);
+
+  const updateOrderStatus = useCallback(async (id, status, isDemo = false) => {
+    if (isDemo) { setDemoOrders((previous) => previous.map((order) => order.id === id ? { ...order, status, updatedAt: new Date().toISOString() } : order)); return { ok: true }; }
     const order = orders.find((entry) => entry.id === id);
     if (!order || order.status === status) return { ok: Boolean(order) };
-    const needs = stockNeeds(order);
-    let nextInventory = inventory;
-    const wasConfirmed = confirmedStatuses().includes(order.status);
-    const becomesConfirmed = confirmedStatuses().includes(status);
-    if (!wasConfirmed && becomesConfirmed && (!order.stockDeducted || order.stockRestored)) {
+    const wasConfirmed = confirmedStatuses().includes(order.status), becomesConfirmed = confirmedStatuses().includes(status), needs = stockNeeds(order);
+    if (!wasConfirmed && becomesConfirmed) {
       const unavailable = Object.entries(needs).find(([flavorId, count]) => (inventory.flavors[flavorId]?.quantity || 0) < count);
       if (unavailable) return { ok: false, error: `Estoque insuficiente para ${STOCK_FLAVORS.find((flavor) => flavor.id === unavailable[0])?.name || unavailable[0]}.` };
+    }
+    const { error } = await supabase.from('orders').update({ status }).eq('order_number', id);
+    if (error) return { ok: false, error: error.message };
+    let nextInventory = inventory;
+    if (!wasConfirmed && becomesConfirmed) {
       nextInventory = { ...inventory, flavors: { ...inventory.flavors } };
       for (const [flavorId, count] of Object.entries(needs)) nextInventory.flavors[flavorId] = { ...nextInventory.flavors[flavorId], quantity: nextInventory.flavors[flavorId].quantity - count };
     }
@@ -284,60 +334,23 @@ export function AuthProvider({ children }) {
       for (const [flavorId, count] of Object.entries(needs)) nextInventory.flavors[flavorId] = { ...nextInventory.flavors[flavorId], quantity: nextInventory.flavors[flavorId].quantity + count };
     }
     if (nextInventory !== inventory) setInventory(nextInventory);
-    setOrders((previous) => previous.map((entry) => entry.id === id ? {
-      ...entry, status, updatedAt: new Date().toISOString(),
-      stockDeducted: entry.stockDeducted || (!wasConfirmed && becomesConfirmed),
-      stockRestored: !wasConfirmed && becomesConfirmed
-        ? false
-        : status === 'cancelled' && entry.stockDeducted ? true : entry.stockRestored,
-    } : entry));
+    setOrders((previous) => previous.map((entry) => entry.id === id ? { ...entry, status, updatedAt: new Date().toISOString(), stockDeducted: entry.stockDeducted || (!wasConfirmed && becomesConfirmed), stockRestored: status === 'cancelled' && entry.stockDeducted ? true : false } : entry));
     return { ok: true };
   }, [orders, inventory]);
 
-  const updateInventorySettings = useCallback((changes) => {
-    setInventory((previous) => createInventory({ ...previous, ...changes, flavors: { ...previous.flavors, ...(changes.flavors || {}) } }));
-  }, []);
-
-  const updateFlavorStock = useCallback((flavorId, changes) => {
-    setInventory((previous) => createInventory({ ...previous, flavors: { ...previous.flavors, [flavorId]: { ...previous.flavors[flavorId], ...changes } } }));
-  }, []);
-
-  const stockAvailability = useCallback((flavorId, quantity = 1) => {
-    const flavor = inventory.flavors[flavorId];
-    return Boolean(flavor && flavor.quantity >= quantity && (inventory.mode !== 'manual' || flavor.manualAvailable));
-  }, [inventory]);
-
+  const updateInventorySettings = useCallback((changes) => setInventory((previous) => createInventory({ ...previous, ...changes, flavors: { ...previous.flavors, ...(changes.flavors || {}) } })), []);
+  const updateFlavorStock = useCallback((flavorId, changes) => setInventory((previous) => createInventory({ ...previous, flavors: { ...previous.flavors, [flavorId]: { ...previous.flavors[flavorId], ...changes } } })), []);
+  const stockAvailability = useCallback((flavorId, quantity = 1) => { const flavor = inventory.flavors[flavorId]; return Boolean(flavor && flavor.quantity >= quantity && (inventory.mode !== 'manual' || flavor.manualAvailable)); }, [inventory]);
   const canFulfillItems = useCallback((items) => {
-    const needs = stockNeeds({ items: (items || []).map((item) => ({
-      productId: item.productId || item.product?.id,
-      baseId: item.baseId || item.base?.id,
-      quantity: item.quantity,
-    })) });
+    const needs = stockNeeds({ items: (items || []).map((item) => ({ productId: item.productId || item.product?.id, baseId: item.baseId || item.base?.id, quantity: item.quantity })) });
     const unavailable = Object.entries(needs).find(([flavorId, count]) => !stockAvailability(flavorId, count));
     return unavailable ? { ok: false, error: `Estoque insuficiente ou sabor indisponível: ${STOCK_FLAVORS.find((flavor) => flavor.id === unavailable[0])?.name || unavailable[0]}.` } : { ok: true };
   }, [stockAvailability]);
-
-  const updateProductSetting = useCallback((productId, changes) => {
-    setProductSettings((previous) => ({ ...previous, [productId]: { ...previous[productId], ...changes } }));
-  }, []);
-
-  const updateStoreSettings = useCallback((changes) => {
-    setSettings((previous) => ({
-      ...previous,
-      ...changes,
-      pix: changes.pix ? { ...previous.pix, ...changes.pix } : previous.pix,
-      status: changes.status ? { ...previous.status, ...changes.status } : previous.status,
-    }));
-  }, []);
-
+  const updateProductSetting = useCallback((productId, changes) => setProductSettings((previous) => ({ ...previous, [productId]: { ...previous[productId], ...changes } })), []);
+  const updateStoreSettings = useCallback((changes) => setSettings((previous) => ({ ...previous, ...changes, pix: changes.pix ? { ...previous.pix, ...changes.pix } : previous.pix, status: changes.status ? { ...previous.status, ...changes.status } : previous.status })), []);
   const clearDemoOrders = useCallback(() => setDemoOrders([]), []);
 
-  const value = useMemo(() => ({
-    users, currentUser, orders, demoOrders, productSettings, settings, inventory,
-    login, register, logout, updateCustomerPhone, recordOrder, updateOrderStatus,
-    updateProductSetting, updateStoreSettings, clearDemoOrders, updateInventorySettings, updateFlavorStock, stockAvailability, canFulfillItems, updateCustomerProfile, changeCustomerPassword,
-  }), [users, currentUser, orders, demoOrders, productSettings, settings, inventory, login, register, logout, updateCustomerPhone, updateCustomerProfile, changeCustomerPassword, recordOrder, updateOrderStatus, updateProductSetting, updateStoreSettings, clearDemoOrders, updateInventorySettings, updateFlavorStock, stockAvailability, canFulfillItems]);
-
+  const value = useMemo(() => ({ users, currentUser, authLoading, passwordRecoveryPending, addresses, paymentPreference, orders, demoOrders, productSettings, settings, inventory, login, register, loginWithGoogle, resetPassword, logout, recordOrder, updateOrderStatus, updateProductSetting, updateStoreSettings, clearDemoOrders, updateInventorySettings, updateFlavorStock, stockAvailability, canFulfillItems, updateCustomerProfile, changeCustomerPassword, saveAddress, deleteAddress, savePaymentPreference }), [users, currentUser, authLoading, passwordRecoveryPending, addresses, paymentPreference, orders, demoOrders, productSettings, settings, inventory, login, register, loginWithGoogle, resetPassword, logout, recordOrder, updateOrderStatus, updateProductSetting, updateStoreSettings, clearDemoOrders, updateInventorySettings, updateFlavorStock, stockAvailability, canFulfillItems, updateCustomerProfile, changeCustomerPassword, saveAddress, deleteAddress, savePaymentPreference]);
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;
 }
 

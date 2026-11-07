@@ -38,7 +38,7 @@ export function CheckoutModal({ onOrderSuccess, onRequestAuth }) {
     isCheckoutOpen, closeCheckout, items, subtotal, deliveryFee, total,
     deliveryType, setDeliveryType, clearCart,
   } = useCart();
-  const { currentUser, recordOrder, settings, canFulfillItems } = useAuth();
+  const { currentUser, authLoading, recordOrder, settings, canFulfillItems, addresses, paymentPreference } = useAuth();
   const [step, setStep] = useState(1);
   const [formData, setFormData] = useState({
     name: '', phone: '', cep: '', street: '', number: '', complement: '',
@@ -50,18 +50,33 @@ export function CheckoutModal({ onOrderSuccess, onRequestAuth }) {
   const [formErrors, setFormErrors] = useState({});
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [orderError, setOrderError] = useState('');
+  const [profilePrefilledFor, setProfilePrefilledFor] = useState('');
+  const [selectedAddressId, setSelectedAddressId] = useState('new');
+  const [saveAddressForNext, setSaveAddressForNext] = useState(false);
 
   useEffect(() => {
-    if (currentUser?.role === 'customer') {
+    if (!authLoading && currentUser?.role === 'customer' && profilePrefilledFor !== currentUser.id) {
+      const primaryAddress = addresses.find((address) => address.is_default) || addresses[0];
       setFormData((previous) => ({
         ...previous,
-        name: previous.name || currentUser.name,
-        phone: previous.phone || (currentUser.phone ? formatPhone(currentUser.phone) : ''),
+        name: currentUser.name || previous.name,
+        phone: currentUser.phone ? formatPhone(currentUser.phone) : previous.phone,
+        paymentMethod: paymentPreference || 'pix',
+        ...(primaryAddress ? { cep: primaryAddress.postal_code || '', street: primaryAddress.street || '', number: primaryAddress.number || '', complement: primaryAddress.complement || '', neighborhood: primaryAddress.neighborhood || '', city: primaryAddress.city || '', reference: primaryAddress.reference || '' } : {}),
       }));
+      setSelectedAddressId(primaryAddress?.id || 'new');
+      setSaveAddressForNext(!addresses.length);
+      setProfilePrefilledFor(currentUser.id);
     }
-  }, [currentUser]);
+  }, [currentUser, authLoading, addresses, paymentPreference, profilePrefilledFor]);
 
   if (!isCheckoutOpen) return null;
+
+  if (authLoading && !currentUser) return (
+    <div className="fixed inset-0 z-[60] flex items-center justify-center bg-stone-950/55 p-3 backdrop-blur-sm">
+      <div role="status" className="flex items-center gap-3 rounded-2xl bg-white px-5 py-4 text-sm font-medium text-stone-700 shadow-elevated"><Loader2 className="h-5 w-5 animate-spin text-primary" />Carregando sua sessão segura…</div>
+    </div>
+  );
 
   if (currentUser?.role !== 'customer') return (
     <div className="fixed inset-0 z-[60] flex items-center justify-center bg-stone-950/55 p-3 backdrop-blur-sm" onClick={closeCheckout}>
@@ -78,6 +93,19 @@ export function CheckoutModal({ onOrderSuccess, onRequestAuth }) {
   const change = (field, value) => {
     setFormData((prev) => ({ ...prev, [field]: value }));
     setFormErrors((prev) => ({ ...prev, [field]: '' }));
+  };
+
+  const selectSavedAddress = (id) => {
+    setSelectedAddressId(id);
+    if (id === 'new') {
+      setSaveAddressForNext(!addresses.length);
+      setFormData((previous) => ({ ...previous, cep: '', street: '', number: '', complement: '', neighborhood: '', city: '', reference: '' }));
+      return;
+    }
+    const address = addresses.find((entry) => entry.id === id);
+    if (!address) return;
+    setFormData((previous) => ({ ...previous, name: address.recipient_name || previous.name, phone: address.phone ? formatPhone(address.phone) : previous.phone, cep: address.postal_code || '', street: address.street || '', number: address.number || '', complement: address.complement || '', neighborhood: address.neighborhood || '', city: address.city || '', reference: address.reference || '' }));
+    setSaveAddressForNext(false);
   };
 
   const handleCEPBlur = async () => {
@@ -143,19 +171,25 @@ export function CheckoutModal({ onOrderSuccess, onRequestAuth }) {
     return `NOVO PEDIDO — ${settings.name}\n${orderId ? `Pedido: ${orderId}\n` : ''}\nCliente: ${formData.name.trim()}\nE-mail: ${currentUser.email}\nWhatsApp: ${formData.phone.trim()}\n\nENDEREÇO\n${address}\n\nITENS\n${products}\n\nSubtotal: ${formatCurrency(subtotal)}\nEntrega: ${deliveryType === 'pickup' ? 'Retirada sem taxa' : deliveryFee === 0 ? 'Grátis' : formatCurrency(deliveryFee)}\nTOTAL: ${formatCurrency(total)}\n\nPagamento: ${paymentLabel}${changeInfo}${formData.paymentMethod === 'pix' ? `\nChave Pix: ${settings.pix.key}` : ''}${itemNotes}\n\nAgradeço pela preferência!`;
   };
 
-  const handleFinishOrder = (event) => {
+  const handleFinishOrder = async (event) => {
     event.preventDefault();
     if (!validateAddress() || !validatePayment()) {
       if (!validateAddress()) setStep(1);
       else setStep(2);
       return;
     }
+    const whatsappWindow = window.open('about:blank', '_blank');
+    if (whatsappWindow) whatsappWindow.opener = null;
     setIsSubmitting(true);
     setOrderError('');
     try {
       const stockCheck = canFulfillItems(items);
       if (!stockCheck.ok) throw new Error(stockCheck.error);
-      const savedOrder = recordOrder({
+      const addressSnapshot = deliveryType === 'delivery' ? {
+        street: formData.street.trim(), number: formData.number.trim(), complement: formData.complement.trim(),
+        neighborhood: formData.neighborhood.trim(), city: formData.city.trim(), postal_code: formData.cep.trim(), reference: formData.reference.trim(),
+      } : {};
+      const result = await recordOrder({
         customerName: formData.name.trim(),
         phone: formData.phone.trim(),
         items: items.map((item) => ({
@@ -174,17 +208,23 @@ export function CheckoutModal({ onOrderSuccess, onRequestAuth }) {
         total,
         deliveryType,
         address: deliveryType === 'delivery' ? `${formData.street}, ${formData.number}${formData.complement ? `, ${formData.complement}` : ''}; ${formData.neighborhood}, ${formData.city}; CEP ${formData.cep}${formData.reference ? `; Referência: ${formData.reference}` : ''}` : settings.pickupAddress,
+        addressSnapshot,
+        paymentMethodId: formData.paymentMethod,
+        saveAddress: saveAddressForNext || !addresses.length,
+        makeDefaultAddress: !addresses.length,
         paymentMethod: paymentLabel,
         orderNotes: formData.orderNotes.trim(),
       });
-      if (!savedOrder) throw new Error('Entre em uma conta de cliente para registrar o pedido.');
+      if (!result?.ok) throw new Error(result?.error || 'Não foi possível registrar o pedido.');
+      const savedOrder = result.order;
       const message = buildWhatsAppMessage(savedOrder.id);
       const whatsappUrl = `https://wa.me/${settings.whatsappNumber}?text=${encodeURIComponent(message)}`;
-      window.open(whatsappUrl, '_blank', 'noopener,noreferrer');
+      if (whatsappWindow) whatsappWindow.location.href = whatsappUrl;
       onOrderSuccess?.({ customer: formData.name, phone: formData.phone, items: [...items], total, whatsappUrl, message, paymentMethod: formData.paymentMethod, orderId: savedOrder.id });
       clearCart();
       closeCheckout();
     } catch (err) {
+      whatsappWindow?.close();
       setOrderError(err.message || 'Não foi possível registrar o pedido.');
       console.error('Erro ao finalizar pedido:', err);
     } finally {
@@ -233,7 +273,8 @@ export function CheckoutModal({ onOrderSuccess, onRequestAuth }) {
                 </div>
               </section>
               {deliveryType === 'delivery' && <section className="space-y-4 border-t border-stone-100 pt-5">
-                <div><h3 className="font-semibold text-stone-900">Endereço de entrega</h3><p className="mt-1 text-sm text-stone-500">Informe seu CEP para preencher o endereço automaticamente.</p></div>
+                <div><h3 className="font-semibold text-stone-900">Endereço de entrega</h3><p className="mt-1 text-sm text-stone-500">Escolha um endereço salvo ou informe outro. </p></div>
+                {addresses.length > 0 && <label className="block"><span className="mb-1.5 block text-xs font-medium text-stone-700">Usar endereço salvo</span><select value={selectedAddressId} onChange={(event) => selectSavedAddress(event.target.value)} className="min-h-11 w-full rounded-lg border border-stone-200 bg-white px-3 text-sm text-stone-800"><option value="new">Informar outro endereço</option>{addresses.map((address) => <option key={address.id} value={address.id}>{address.label || 'Endereço'} — {address.street}, {address.number} · {address.neighborhood}</option>)}</select></label>}
                 <div className="grid gap-4 sm:grid-cols-3">
                   <label className="block"><span className="mb-1.5 block text-xs font-medium text-stone-700">CEP *</span><span className="relative block"><input value={formData.cep} maxLength={9} inputMode="numeric" placeholder="00000-000" onBlur={handleCEPBlur} onChange={(event) => change('cep', formatCEP(event.target.value))} className={inputClass('cep')} />{loadingCEP && <Loader2 className="absolute right-3 top-3 h-4 w-4 animate-spin text-stone-500" />}</span>{formErrors.cep && <span className="mt-1 block text-xs text-rose-600">{formErrors.cep}</span>}</label>
                   <div className="flex items-end"><button type="button" onClick={handleCEPBlur} disabled={loadingCEP} className="h-[42px] w-full rounded-lg border border-stone-200 px-3 text-sm font-medium text-stone-700 hover:bg-stone-50 disabled:opacity-50">Buscar CEP</button></div>
@@ -250,13 +291,14 @@ export function CheckoutModal({ onOrderSuccess, onRequestAuth }) {
                 </div>
                 <CheckoutField label="Complemento" optional field="complement" value={formData.complement} onChange={(value) => change('complement', value)} error={formErrors.complement} inputClass={inputClass('complement')} autoComplete="address-line2" placeholder="Apto, bloco..." />
                 <CheckoutField label="Referência" optional field="reference" value={formData.reference} onChange={(value) => change('reference', value)} error={formErrors.reference} inputClass={inputClass('reference')} placeholder="Ponto de referência" />
+                <label className="flex min-h-11 items-center gap-2 rounded-lg bg-primary-light/40 px-3 text-xs font-medium text-stone-700"><input type="checkbox" checked={saveAddressForNext} onChange={(event) => setSaveAddressForNext(event.target.checked)} />Salvar este endereço para os próximos pedidos</label>
               </section>}
               <section className="rounded-xl bg-stone-50 p-4"><div className="flex items-center justify-between"><h3 className="font-medium text-stone-800">Seu pedido</h3><span className="text-sm text-stone-500">{items.reduce((sum, item) => sum + item.quantity, 0)} itens</span></div><div className="mt-3 space-y-2">{items.map((item) => <div key={item.cartKey} className="flex justify-between gap-3 text-sm"><span className="text-stone-600">{item.quantity}x {item.product.name}</span><span className="shrink-0 text-stone-700">{formatCurrency(item.totalPrice)}</span></div>)}</div><div className="mt-3 border-t border-stone-200 pt-3 text-sm"><div className="flex justify-between text-stone-500"><span>Subtotal</span><span>{formatCurrency(subtotal)}</span></div><div className="mt-1 flex justify-between text-stone-500"><span>Entrega</span><span>{deliveryType === 'pickup' ? 'Retirada' : deliveryFee === 0 ? 'Grátis' : formatCurrency(deliveryFee)}</span></div><div className="mt-2 flex justify-between font-semibold text-stone-900"><span>Total</span><span>{formatCurrency(total)}</span></div></div></section>
             </>}
 
             {step === 2 && <>
               <div><h3 className="font-semibold text-stone-900">Como deseja pagar?</h3><p className="mt-1 text-sm text-stone-500">O pagamento será combinado na entrega ou retirada.</p></div>
-              <div className="grid gap-3 sm:grid-cols-2"><PaymentOption value="money" label="Dinheiro" icon={Banknote} selected={formData.paymentMethod === 'money'} onSelect={(value) => change('paymentMethod', value)} /><PaymentOption value="pix" label="Pix" icon={QrCode} selected={formData.paymentMethod === 'pix'} onSelect={(value) => change('paymentMethod', value)} /><PaymentOption value="credit" label="Cartão de crédito" icon={CreditCard} /><PaymentOption value="debit" label="Cartão de débito" icon={CreditCard} /></div>
+              <div className="grid gap-3 sm:grid-cols-2"><PaymentOption value="money" label="Dinheiro" icon={Banknote} selected={formData.paymentMethod === 'money'} onSelect={(value) => change('paymentMethod', value)} /><PaymentOption value="pix" label="Pix" icon={QrCode} selected={formData.paymentMethod === 'pix'} onSelect={(value) => change('paymentMethod', value)} /><PaymentOption value="credit" label="Cartão de crédito" icon={CreditCard} selected={formData.paymentMethod === 'credit'} onSelect={(value) => change('paymentMethod', value)} /><PaymentOption value="debit" label="Cartão de débito" icon={CreditCard} selected={formData.paymentMethod === 'debit'} onSelect={(value) => change('paymentMethod', value)} /></div>
               {formData.paymentMethod === 'money' && <section className="space-y-4 rounded-xl bg-stone-50 p-4"><h4 className="text-sm font-semibold text-stone-800">Precisa de troco?</h4><div className="grid grid-cols-2 gap-3"><button type="button" onClick={() => change('needsChange', 'nao')} aria-pressed={formData.needsChange === 'nao'} className={`rounded-lg border px-3 py-3 text-sm ${formData.needsChange === 'nao' ? 'border-primary bg-white text-primary' : 'border-stone-200 bg-white text-stone-600'}`}>Não, valor exato</button><button type="button" onClick={() => change('needsChange', 'sim')} aria-pressed={formData.needsChange === 'sim'} className={`rounded-lg border px-3 py-3 text-sm ${formData.needsChange === 'sim' ? 'border-primary bg-white text-primary' : 'border-stone-200 bg-white text-stone-600'}`}>Sim, preciso</button></div>{formData.needsChange === 'sim' && <label className="block"><span className="mb-1.5 block text-xs font-medium text-stone-700">Troco para quanto?</span><span className="flex items-center gap-2"><span className="text-sm text-stone-500">R$</span><input inputMode="decimal" value={formData.changeFor} onChange={(event) => change('changeFor', event.target.value)} placeholder="50,00" className={inputClass('changeFor')} /></span>{formErrors.changeFor && <span className="mt-1 block text-xs text-rose-600">{formErrors.changeFor}</span>}</label>}</section>}
               {formData.paymentMethod === 'pix' && <p className="rounded-xl bg-stone-50 p-4 text-sm text-stone-600">A chave Pix ({settings.pix.key}) será enviada junto com os dados do pedido.</p>}
               {(formData.paymentMethod === 'credit' || formData.paymentMethod === 'debit') && <p className="rounded-xl bg-stone-50 p-4 text-sm text-stone-600">O entregador levará a maquininha no momento da entrega.</p>}

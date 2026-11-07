@@ -40,6 +40,15 @@
   scrollbar-width: none;
 }
 
+@media (max-width: 767px) {
+  .admin-panel input:not([type='checkbox']),
+  .admin-panel select,
+  .admin-panel textarea {
+    min-height: 44px;
+    font-size: 16px;
+  }
+}
+
 @keyframes pulseSubtle {
   0%, 100% { transform: scale(1); }
   50% { transform: scale(1.03); }
