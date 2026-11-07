@@ -18,6 +18,7 @@ import { AnimatedText } from './components/AnimatedText';
 import { AuthProvider, useAuth } from './context/AuthContext';
 import { AccountModal } from './components/AccountModal';
 import { AdminPanel } from './components/AdminPanel';
+import { OrderTrackingModal } from './components/OrderTrackingModal';
 
 let aosInitialized = false;
 
@@ -28,8 +29,9 @@ function DeliveryApp() {
   const [accountOpen, setAccountOpen] = useState(false);
   const [accountMode, setAccountMode] = useState('login');
   const [adminOpen, setAdminOpen] = useState(false);
+  const [trackingOpen, setTrackingOpen] = useState(false);
   const { openProductDetails, addToCart, openCheckout, addedProductName } = useCart();
-  const { currentUser, productSettings } = useAuth();
+  const { currentUser, productSettings, inventory, stockAvailability } = useAuth();
   const menuSectionRef = useRef(null);
 
   const activeProducts = useMemo(() => PRODUCTS
@@ -40,7 +42,14 @@ function DeliveryApp() {
         ? Number(productSettings[product.id].price)
         : product.price,
       available: productSettings[product.id]?.available !== false,
-    })), [productSettings]);
+      ...(product.id === 'combo-2-batidas-alcoolicas' ? {
+        stockAvailability: (id, quantity = 1) => stockAvailability(id, quantity),
+        available: product.bases.some((pair) => {
+          const ids = pair.id.replace('dupla-', '').split('--');
+          return ids.every((id) => stockAvailability(id));
+        }),
+      } : product.id in inventory.flavors ? { available: stockAvailability(product.id) } : {}),
+    })), [productSettings, inventory, stockAvailability]);
 
   const handleAddToCart = (product) => {
     if (product.requiresCustomization) {
@@ -108,7 +117,7 @@ function DeliveryApp() {
   return (
     <div className="min-h-screen flex flex-col bg-surface-50 text-ink font-sans selection:bg-primary selection:text-white">
       {/* Cabeçalho */}
-      <Header onOpenAccount={() => { setAccountMode('login'); setAccountOpen(true); }} onOpenAdminPanel={() => setAdminOpen(true)} />
+      <Header onOpenAccount={() => { setAccountMode('login'); setAccountOpen(true); }} onOpenTracking={() => setTrackingOpen(true)} onOpenAdminPanel={() => setAdminOpen(true)} />
 
       {/* Banner Principal com Selo Integrado Junto à Imagem */}
       <HeroBanner onExploreClick={scrollToMenu} />
@@ -215,7 +224,7 @@ function DeliveryApp() {
       <LocationContactSection />
 
       {/* Rodapé */}
-      <Footer />
+      <Footer onOpenTracking={() => setTrackingOpen(true)} onOpenAdminPanel={() => setAdminOpen(true)} />
 
       {/* Modais e Drawers Funcionais */}
       <ProductModal />
@@ -230,6 +239,7 @@ function DeliveryApp() {
       <MobileFloatingCart />
 
       <AccountModal isOpen={accountOpen} initialMode={accountMode} onClose={() => setAccountOpen(false)} onOpenAdminPanel={() => setAdminOpen(true)} />
+      <OrderTrackingModal isOpen={trackingOpen} onClose={() => setTrackingOpen(false)} />
       {adminOpen && currentUser?.role === 'admin' && <AdminPanel onClose={() => setAdminOpen(false)} />}
 
       {addedProductName && (

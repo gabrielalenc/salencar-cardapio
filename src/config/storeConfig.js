@@ -6,8 +6,8 @@
 export const STORE_CONFIG = {
   name: "Salencar Batidas Artesanais",
   tagline: "Seu momento, seu sabor.",
-  whatsappNumber: "5511948648947", // Formato internacional: 55 + DDD + Número
-  whatsappFormatted: "(11) 94864-8947",
+  whatsappNumber: "5511983626392", // Formato internacional: 55 + DDD + Número
+  whatsappFormatted: "(11) 98362-6392",
   instagram: "@salencar.delicias",
   instagramUrl: "https://www.instagram.com/salencar.delicias?cplk=ZDNlZDc0MzIxNw==",
 
@@ -40,5 +40,5 @@ export const STORE_CONFIG = {
   },
 
   // Endereço de Retirada
-  pickupAddress: "Rua das Palmeiras, 250 - Centro"
+  pickupAddress: "Passagem Marima, 56, Conceição, Diadema - SP"
 };

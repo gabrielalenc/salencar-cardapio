@@ -38,7 +38,7 @@ export function CheckoutModal({ onOrderSuccess, onRequestAuth }) {
     isCheckoutOpen, closeCheckout, items, subtotal, deliveryFee, total,
     deliveryType, setDeliveryType, clearCart,
   } = useCart();
-  const { currentUser, recordOrder, settings } = useAuth();
+  const { currentUser, recordOrder, settings, canFulfillItems } = useAuth();
   const [step, setStep] = useState(1);
   const [formData, setFormData] = useState({
     name: '', phone: '', cep: '', street: '', number: '', complement: '',
@@ -49,6 +49,7 @@ export function CheckoutModal({ onOrderSuccess, onRequestAuth }) {
   const [cepError, setCepError] = useState('');
   const [formErrors, setFormErrors] = useState({});
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [orderError, setOrderError] = useState('');
 
   useEffect(() => {
     if (currentUser?.role === 'customer') {
@@ -150,7 +151,10 @@ export function CheckoutModal({ onOrderSuccess, onRequestAuth }) {
       return;
     }
     setIsSubmitting(true);
+    setOrderError('');
     try {
+      const stockCheck = canFulfillItems(items);
+      if (!stockCheck.ok) throw new Error(stockCheck.error);
       const savedOrder = recordOrder({
         customerName: formData.name.trim(),
         phone: formData.phone.trim(),
@@ -158,6 +162,7 @@ export function CheckoutModal({ onOrderSuccess, onRequestAuth }) {
           productId: item.product.id,
           productName: item.product.name,
           productImage: item.product.image,
+          baseId: item.base?.id || '',
           option: item.base?.name || '',
           extras: (item.extras || []).map((extra) => extra.name),
           quantity: item.quantity,
@@ -180,6 +185,7 @@ export function CheckoutModal({ onOrderSuccess, onRequestAuth }) {
       clearCart();
       closeCheckout();
     } catch (err) {
+      setOrderError(err.message || 'Não foi possível registrar o pedido.');
       console.error('Erro ao finalizar pedido:', err);
     } finally {
       setIsSubmitting(false);
@@ -211,6 +217,7 @@ export function CheckoutModal({ onOrderSuccess, onRequestAuth }) {
 
         <form onSubmit={step === 3 ? handleFinishOrder : (event) => { event.preventDefault(); goNext(); }} className="flex min-h-0 flex-1 flex-col">
           <main className="flex-1 space-y-5 overflow-y-auto px-4 py-5 sm:px-8 sm:py-6">
+            {orderError && <p role="alert" className="rounded-xl bg-rose-50 px-3 py-3 text-sm font-medium text-rose-700">{orderError}</p>}
             {step === 1 && <>
               <section className="space-y-4">
                 <div><h3 className="font-semibold text-stone-900">Como vamos receber o pedido?</h3><p className="mt-1 text-sm text-stone-500">Escolha entrega ou retirada no local.</p></div>

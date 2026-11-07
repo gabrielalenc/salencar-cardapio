@@ -45,13 +45,16 @@ export function ProductModal() {
     ? selectedProduct.bases.find((base) => base.id === `dupla-${orderedPairIds[0]}--${orderedPairIds[1]}`)
     : null;
   const cartBase = pairOptions.length ? selectedPairBase : selectedBase;
+  const selectedStockReady = pairOptions.length
+    ? selectedPairOptions.every(Boolean) && Object.entries(selectedPairOptions.reduce((counts, option) => ({ ...counts, [option.id]: (counts[option.id] || 0) + quantity }), {})).every(([id, count]) => selectedProduct.stockAvailability?.(id, count) ?? true)
+    : (selectedProduct.stockAvailability?.(selectedProduct.id, quantity) ?? selectedProduct.available !== false);
   const basePrice = cartBase?.price || 0;
   const extrasTotal = selectedExtras.reduce((acc, curr) => acc + (curr.price || 0), 0);
   const unitPrice = selectedProduct.price + basePrice + extrasTotal;
   const totalPrice = unitPrice * quantity;
 
   const handleAddToCart = () => {
-    if (selectedProduct.available === false) return;
+    if (selectedProduct.available === false || !selectedStockReady) return;
     if (pairOptions.length && !selectedPairBase) return;
     addToCart(selectedProduct, cartBase, selectedExtras, notes, quantity);
     openCart();
@@ -139,7 +142,7 @@ export function ProductModal() {
                         aria-label={`Escolha a batida ${index + 1} da dupla`}
                       >
                         <option value="">Selecione um sabor</option>
-                        {pairOptions.map((option) => <option key={option.id} value={option.id}>{option.name}</option>)}
+                        {pairOptions.map((option) => <option key={option.id} value={option.id} disabled={!selectedProduct.stockAvailability?.(option.id, quantity)}>{option.name}{selectedProduct.stockAvailability && !selectedProduct.stockAvailability(option.id, quantity) ? ' — indisponível' : ''}</option>)}
                       </select>
                     </label>
                   ))}
@@ -305,10 +308,10 @@ export function ProductModal() {
           <button
             type="button"
             onClick={handleAddToCart}
-            disabled={selectedProduct.available === false || (pairOptions.length > 0 && (!pairReady || !selectedPairBase))}
+            disabled={selectedProduct.available === false || !selectedStockReady || (pairOptions.length > 0 && (!pairReady || !selectedPairBase))}
             className="flex-1 bg-primary hover:bg-primary-hover text-white py-3 px-4 rounded-lg font-semibold text-xs sm:text-sm flex items-center justify-between shadow-subtle transition-colors duration-150 active:scale-[0.99] disabled:cursor-not-allowed disabled:opacity-50"
           >
-            <span>{selectedProduct.available === false ? 'Indisponível' : 'Adicionar ao Carrinho'}</span>
+            <span>{selectedProduct.available === false || !selectedStockReady ? 'Sabor indisponível' : 'Adicionar ao Carrinho'}</span>
             <span className="font-bold">
               {formatCurrency(totalPrice)}
             </span>
