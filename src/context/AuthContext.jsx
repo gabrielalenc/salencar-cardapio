@@ -176,10 +176,16 @@ export function AuthProvider({ children }) {
 
   const loadAccountData = useCallback(async (authUser) => {
     if (!authUser || !supabase) { setCurrentUser(null); setAddresses([]); setOrders([]); setUsers([]); return null; }
+    // OAuth can return a valid Auth user even when an older/missing DB trigger
+    // failed to create its profile. This idempotent RPC uses auth.uid() server-side.
+    const { error: ensureProfileError } = await supabase.rpc('ensure_customer_profile');
+    // Existing deployments can still load profiles while the follow-up migration
+    // is being applied; a missing profile below remains an actionable error.
+    if (ensureProfileError && ensureProfileError.code !== 'PGRST202') throw ensureProfileError;
     const { data: profile, error: profileError } = await supabase.from('profiles').select('*').eq('id', authUser.id).maybeSingle();
     if (profileError) throw profileError;
-    if (!profile) throw new Error('Perfil não encontrado. Confira se a migration do Supabase foi executada.');
-    const user = { id: authUser.id, name: profile.full_name || authUser.user_metadata?.full_name || authUser.user_metadata?.name || '', email: profile.email || authUser.email || '', phone: profile.phone || '', role: profile.role, createdAt: profile.created_at };
+    if (!profile) throw new Error('Não foi possível criar o perfil da conta. Aplique as migrations atuais do Supabase e tente novamente.');
+    const user = { id: authUser.id, name: profile.full_name || authUser.user_metadata?.full_name || authUser.user_metadata?.name || authUser.email?.split('@')[0] || '', email: profile.email || authUser.email || '', phone: profile.phone || '', role: profile.role, createdAt: profile.created_at, avatarUrl: authUser.user_metadata?.avatar_url || authUser.user_metadata?.picture || '' };
     setCurrentUser(user);
     const [addressResult, preferenceResult, orderResult] = await Promise.all([
       user.role === 'customer' ? supabase.from('addresses').select('*').eq('user_id', user.id).order('is_default', { ascending: false }).order('created_at') : Promise.resolve({ data: [], error: null }),
@@ -203,13 +209,13 @@ export function AuthProvider({ children }) {
     supabase.auth.getSession().then(async ({ data, error }) => {
       if (error) throw error;
       if (data.session && active) await loadAccountData(data.session.user);
-    }).catch((error) => console.error('Falha ao recuperar sessão Supabase:', error)).finally(() => { if (active) setAuthLoading(false); });
+    }).catch((error) => console.error('Falha ao recuperar sessão/perfil Supabase:', error)).finally(() => { if (active) setAuthLoading(false); });
     const { data: listener } = supabase.auth.onAuthStateChange((event, session) => {
       if (!active) return;
       if (event === 'PASSWORD_RECOVERY') setPasswordRecoveryPending(true);
       if (!session) { setCurrentUser(null); setAddresses([]); setOrders([]); setUsers([]); setPasswordRecoveryPending(false); setAuthLoading(false); return; }
       setAuthLoading(true);
-      window.setTimeout(() => loadAccountData(session.user).catch((error) => console.error('Falha ao carregar conta:', error)).finally(() => { if (active) setAuthLoading(false); }), 0);
+      window.setTimeout(() => loadAccountData(session.user).catch((error) => console.error(`Falha ao processar autenticação Supabase (${event}):`, error)).finally(() => { if (active) setAuthLoading(false); }), 0);
     });
     return () => { active = false; listener.subscription.unsubscribe(); };
   }, [loadAccountData]);

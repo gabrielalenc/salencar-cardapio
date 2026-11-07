@@ -6,6 +6,7 @@ O frontend já usa Supabase Auth e as tabelas protegidas por RLS para sessões, 
 
 1. Crie um projeto no [Supabase](https://supabase.com/dashboard).
 2. Abra **SQL Editor → New query**, cole o conteúdo de `supabase/migrations/20261107000000_customer_accounts_orders.sql` e execute.
+3. Execute também supabase/migrations/20261107120000_ensure_customer_profile.sql; ela corrige perfis ausentes de forma idempotente no primeiro login autenticado.
 3. Confira em **Table Editor** se foram criadas `profiles`, `addresses`, `customer_preferences`, `orders` e `order_items` e se RLS está ativa.
 
 A função `create_customer_order` grava o pedido e todos os itens em uma transação. Clientes só leem seus pedidos/endereço/perfil e não podem alterar `profiles.role`; administradores são determinados pelo banco.
