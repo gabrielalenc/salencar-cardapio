@@ -234,6 +234,25 @@ export function AuthProvider({ children }) {
     if (error) return { ok: false, error: error.message };
     try { return { ok: true, user: await loadAccountData(data.user) }; } catch (cause) { await supabase.auth.signOut(); return { ok: false, error: cause.message }; }
   }, [loadAccountData]);
+  const verifyAdminAuthorization = useCallback(async () => {
+    if (!supabase) return { ok: false, error: getSupabaseConfigError() };
+    const { data, error } = await supabase.rpc('is_admin');
+    if (error) return { ok: false, error: error.message };
+    return { ok: data === true };
+  }, []);
+  const loginAdmin = useCallback(async (email, password) => {
+    const result = await login(email, password);
+    if (!result.ok) {
+      const invalidCredentials = /invalid login credentials|email not confirmed/i.test(result.error || '');
+      return { ok: false, error: invalidCredentials ? 'E-mail ou senha incorretos. Confira os dados e tente novamente.' : result.error };
+    }
+    const authorization = await verifyAdminAuthorization();
+    if (!authorization.ok || result.user?.role !== 'admin') {
+      await supabase.auth.signOut();
+      return { ok: false, error: authorization.error || 'Esta conta não tem permissão para acessar o painel administrativo.' };
+    }
+    return result;
+  }, [login, verifyAdminAuthorization]);
   const register = useCallback(async ({ name, email, password }) => {
     if (!supabase) return { ok: false, error: getSupabaseConfigError() };
     const { data, error } = await supabase.auth.signUp({ email: email.trim().toLowerCase(), password, options: { data: { full_name: name.trim() }, emailRedirectTo: window.location.origin } });
@@ -356,7 +375,7 @@ export function AuthProvider({ children }) {
   const updateStoreSettings = useCallback((changes) => setSettings((previous) => ({ ...previous, ...changes, pix: changes.pix ? { ...previous.pix, ...changes.pix } : previous.pix, status: changes.status ? { ...previous.status, ...changes.status } : previous.status })), []);
   const clearDemoOrders = useCallback(() => setDemoOrders([]), []);
 
-  const value = useMemo(() => ({ users, currentUser, authLoading, passwordRecoveryPending, addresses, paymentPreference, orders, demoOrders, productSettings, settings, inventory, login, register, loginWithGoogle, resetPassword, logout, recordOrder, updateOrderStatus, updateProductSetting, updateStoreSettings, clearDemoOrders, updateInventorySettings, updateFlavorStock, stockAvailability, canFulfillItems, updateCustomerProfile, changeCustomerPassword, saveAddress, deleteAddress, savePaymentPreference }), [users, currentUser, authLoading, passwordRecoveryPending, addresses, paymentPreference, orders, demoOrders, productSettings, settings, inventory, login, register, loginWithGoogle, resetPassword, logout, recordOrder, updateOrderStatus, updateProductSetting, updateStoreSettings, clearDemoOrders, updateInventorySettings, updateFlavorStock, stockAvailability, canFulfillItems, updateCustomerProfile, changeCustomerPassword, saveAddress, deleteAddress, savePaymentPreference]);
+  const value = useMemo(() => ({ users, currentUser, authLoading, passwordRecoveryPending, addresses, paymentPreference, orders, demoOrders, productSettings, settings, inventory, login, loginAdmin, verifyAdminAuthorization, register, loginWithGoogle, resetPassword, logout, recordOrder, updateOrderStatus, updateProductSetting, updateStoreSettings, clearDemoOrders, updateInventorySettings, updateFlavorStock, stockAvailability, canFulfillItems, updateCustomerProfile, changeCustomerPassword, saveAddress, deleteAddress, savePaymentPreference }), [users, currentUser, authLoading, passwordRecoveryPending, addresses, paymentPreference, orders, demoOrders, productSettings, settings, inventory, login, loginAdmin, verifyAdminAuthorization, register, loginWithGoogle, resetPassword, logout, recordOrder, updateOrderStatus, updateProductSetting, updateStoreSettings, clearDemoOrders, updateInventorySettings, updateFlavorStock, stockAvailability, canFulfillItems, updateCustomerProfile, changeCustomerPassword, saveAddress, deleteAddress, savePaymentPreference]);
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;
 }
 

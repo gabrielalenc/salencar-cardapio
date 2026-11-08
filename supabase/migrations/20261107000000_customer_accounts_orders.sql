@@ -97,7 +97,6 @@ set search_path = public
 as $$
 declare
   v_name text;
-  v_role text;
 begin
   v_name := coalesce(
     nullif(trim(new.raw_user_meta_data ->> 'full_name'), ''),
@@ -106,19 +105,11 @@ begin
     split_part(coalesce(new.email, ''), '@', 1)
   );
 
-  -- Authentication metadata can never grant administrative privileges.
-  v_role := 'customer';
-
   insert into public.profiles (id, full_name, email, role)
-  values (new.id, v_name, coalesce(new.email, ''), v_role)
+  values (new.id, v_name, coalesce(new.email, ''), 'customer')
   on conflict (id) do update set
     full_name = case when excluded.full_name <> '' then excluded.full_name else profiles.full_name end,
     email = excluded.email,
-    role = case
-      when lower(profiles.email) = 'admin@salencar.com'
-        and lower(excluded.email) <> 'admin@salencar.com' then 'customer'
-      else profiles.role
-    end,
     updated_at = now();
   return new;
 end;
@@ -134,7 +125,6 @@ create trigger salencar_auth_user_updated
   after update of email, email_confirmed_at, raw_user_meta_data on auth.users
   for each row execute function public.sync_auth_profile();
 
--- Promove com segurança uma conta admin@salencar.com já confirmada.
 insert into public.profiles (id, full_name, email, role)
 select u.id,
        coalesce(
@@ -150,14 +140,7 @@ on conflict (id) do update set
   email = excluded.email,
   updated_at = now();
 
-insert into public.profiles (id, full_name, email, role)
-select u.id,
-       coalesce(nullif(trim(u.raw_user_meta_data ->> 'full_name'), ''), nullif(trim(u.raw_user_meta_data ->> 'name'), ''), 'Administrador'),
-       u.email,
-       'admin'
-from auth.users u
-where lower(u.email) = 'admin@salencar.com' and u.email_confirmed_at is not null
-on conflict (id) do update set role = 'admin', email = excluded.email, updated_at = now();
+
 
 create or replace function public.touch_updated_at()
 returns trigger language plpgsql set search_path = public as $$

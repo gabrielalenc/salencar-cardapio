@@ -6,25 +6,30 @@ O frontend já usa Supabase Auth e as tabelas protegidas por RLS para sessões, 
 
 1. Crie um projeto no [Supabase](https://supabase.com/dashboard).
 2. Abra **SQL Editor → New query**, cole o conteúdo de `supabase/migrations/20261107000000_customer_accounts_orders.sql` e execute.
-3. Execute também supabase/migrations/20261107120000_ensure_customer_profile.sql; ela corrige perfis ausentes de forma idempotente no primeiro login autenticado.
-3. Confira em **Table Editor** se foram criadas `profiles`, `addresses`, `customer_preferences`, `orders` e `order_items` e se RLS está ativa.
+3. Execute também `supabase/migrations/20261107120000_ensure_customer_profile.sql` e `supabase/migrations/20261107130000_admin_access_hardening.sql`, nesta ordem.
+4. Confira em **Table Editor** se foram criadas `profiles`, `addresses`, `customer_preferences`, `orders` e `order_items` e se RLS está ativa.
+
+Se a migration base já foi aplicada no projeto, não a execute novamente; aplique apenas as migrations posteriores que ainda não constarem no histórico do Supabase.
 
 A função `create_customer_order` grava o pedido e todos os itens em uma transação. Clientes só leem seus pedidos/endereço/perfil e não podem alterar `profiles.role`; administradores são determinados pelo banco.
 
 ## 2. Criar a conta administrativa
 
-A conta `admin@salencar.com` que existia no projeto anterior era demonstrativa e não pode ser convertida com segurança, pois sua senha era validada no navegador. Crie ou convide esse usuário em **Authentication → Users**, confirme o e-mail e defina uma senha nova. Então execute uma vez no SQL Editor:
+Crie seu usuário administrativo em **Authentication → Users**, com seu próprio e-mail, senha forte e e-mail confirmado. A migration de hardening remove a promoção por e-mail da versão antiga; depois de executá-la, copie o UUID do administrador e execute a concessão manual abaixo no SQL Editor como operador do projeto:
 
 ```sql
-update public.profiles p
+update public.profiles
 set role = 'admin', updated_at = now()
-from auth.users u
-where p.id = u.id
-  and lower(u.email) = 'admin@salencar.com'
-  and u.email_confirmed_at is not null;
+where id = 'UUID-DO-USUARIO-CONFIRMADO'
+  and exists (
+    select 1 from auth.users u
+    where u.id = profiles.id and u.email_confirmed_at is not null
+  );
 ```
 
-Se o usuário já existia e estava confirmado antes de aplicar a migration, a migration o promove automaticamente. Somente operadores do projeto Supabase devem executar esse SQL; usuários autenticados não recebem permissão para mudar seu próprio papel.
+Confirme que a consulta atualizou exatamente uma linha. O cadastro público cria somente perfis `customer`; nenhum e-mail é promovido automaticamente. Somente operadores do projeto Supabase podem executar essa alteração, e as permissões SQL/RLS não permitem que usuários autenticados mudem `profiles.role`.
+
+Depois do deploy, abra `https://SEU-DOMINIO/admin` ou diretamente `https://SEU-DOMINIO/admin/login`. O login do painel aceita somente e-mail e senha do Supabase Auth e consulta `is_admin()` no banco antes de abrir a interface. O login Google dos clientes continua disponível no fluxo normal do site.
 
 ## 3. E-mail e Google OAuth
 
