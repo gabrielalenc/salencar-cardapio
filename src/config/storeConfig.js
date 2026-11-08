@@ -11,11 +11,7 @@ export const STORE_CONFIG = {
   instagram: "@salencar.delicias",
   instagramUrl: "https://www.instagram.com/salencar.delicias?cplk=ZDNlZDc0MzIxNw==",
 
-  // Regras de Delivery
-  deliveryFee: 6.00,
-  freeDeliveryThreshold: 70.00,
-  estimatedDeliveryTime: "30 a 45 min",
-  minimumOrder: 15.00,
+  deliveryOrigin: "Passagem Marima, 56, ConceiÃ§Ã£o, Diadema - SP",
 
   // Status e Horários
   status: {

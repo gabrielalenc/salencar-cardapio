@@ -13,13 +13,14 @@ import { OrderSuccessModal } from './components/OrderSuccessModal';
 import { MobileFloatingCart } from './components/MobileFloatingCart';
 import { Footer } from './components/Footer';
 import { PRODUCTS, CATEGORIES } from './data/products';
-import { CheckCircle2, Search, X } from 'lucide-react';
+import { Search, X } from 'lucide-react';
 import { AnimatedText } from './components/AnimatedText';
 import { AuthProvider, useAuth } from './context/AuthContext';
 import { AccountModal } from './components/AccountModal';
 import { AdminPanel } from './components/AdminPanel';
 import { AdminLogin } from './components/AdminLogin';
 import { OrderTrackingModal } from './components/OrderTrackingModal';
+import { NotificationProvider } from './components/Notifications';
 
 let aosInitialized = false;
 
@@ -67,7 +68,7 @@ function DeliveryApp() {
   const [accountMode, setAccountMode] = useState('login');
   const [pathname, setPathname] = useState(() => window.location.pathname.replace(/\/+$/, '') || '/');
   const [trackingOpen, setTrackingOpen] = useState(false);
-  const { openProductDetails, addToCart, openCheckout, addedProductName } = useCart();
+  const { openProductDetails, addToCart, openCheckout } = useCart();
   const { currentUser, productSettings, inventory, stockAvailability, passwordRecoveryPending } = useAuth();
   const menuSectionRef = useRef(null);
 
@@ -299,26 +300,18 @@ function DeliveryApp() {
       <AccountModal isOpen={accountOpen} initialMode={accountMode} onClose={() => setAccountOpen(false)} onOpenAdminPanel={() => { setAccountOpen(false); navigate('/admin'); }} />
       <OrderTrackingModal isOpen={trackingOpen} onClose={() => setTrackingOpen(false)} />
 
-      {addedProductName && (
-        <div
-          role="status"
-          aria-live="polite"
-          className="fixed left-4 right-4 top-4 z-[70] flex items-center gap-3 rounded-xl border border-primary/20 bg-surface-50 px-4 py-3 text-sm text-stone-800 shadow-lg sm:left-auto sm:right-6 sm:top-6 sm:max-w-sm"
-        >
-          <CheckCircle2 className="h-5 w-5 shrink-0 text-primary" />
-          <span><strong className="font-semibold">{addedProductName}</strong> adicionado à sacola.</span>
-        </div>
-      )}
     </div>
   );
 }
 
 export default function App() {
   return (
-    <AuthProvider>
-      <CartProvider>
-        <DeliveryApp />
-      </CartProvider>
-    </AuthProvider>
+    <NotificationProvider>
+      <AuthProvider>
+        <CartProvider>
+          <DeliveryApp />
+        </CartProvider>
+      </AuthProvider>
+    </NotificationProvider>
   );
 }

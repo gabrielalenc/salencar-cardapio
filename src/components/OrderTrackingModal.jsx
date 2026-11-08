@@ -3,6 +3,7 @@ import { Check, CheckCircle2, CookingPot, MapPin, PackageCheck, Truck, X, XCircl
 import { useAuth } from '../context/AuthContext';
 import { formatCurrency } from '../utils/formatters';
 import { customerOrderStatus, getCustomerOrders, splitCustomerOrders } from '../utils/orders';
+import { CustomerQuotePanel } from './CustomerQuotePanel';
 
 const STEPS = [
   { id: 'confirmed', label: 'Pedido recebido', detail: 'Recebemos os dados do seu pedido.', icon: PackageCheck },
@@ -17,7 +18,7 @@ function TrackingCard({ order }) {
   const cancelled = order.status === 'cancelled';
   const stage = ({ confirmed: 0, preparing: 1, out_for_delivery: 2, completed: 3 })[order.status] ?? -1;
   const statusLabel = customerOrderStatus(order.status);
-  const statusMessage = cancelled ? 'Este pedido foi cancelado.' : order.status === 'new' ? 'Seu pedido foi registrado e aguarda confirmação.' : STEPS[stage]?.detail || 'Consulte esta página para acompanhar as próximas etapas.';
+  const statusMessage = cancelled ? 'Este pedido foi cancelado.' : order.status === 'awaiting_delivery_quote' ? 'A loja está consultando o valor da entrega.' : order.status === 'awaiting_customer_approval' ? 'Revise a cotação e responda antes da confirmação.' : order.status === 'quote_rejected' ? 'A cotação foi recusada.' : order.status === 'new' ? 'Pedido legado aguardando atualização.' : STEPS[stage]?.detail || 'Consulte esta página para acompanhar as próximas etapas.';
 
   return <article className="min-w-0 rounded-2xl border border-stone-200 bg-white p-4 shadow-subtle sm:p-5">
     <header className="flex flex-wrap items-start justify-between gap-3">
@@ -30,7 +31,9 @@ function TrackingCard({ order }) {
       <ul className="mt-2 space-y-2">{(order.items || []).map((item, index) => <li key={`${item.productId || item.productName || 'item'}-${index}`} className="flex min-w-0 items-start justify-between gap-3 text-xs"><span className="min-w-0 break-words text-stone-700"><strong>{item.quantity}×</strong> {item.productName || item.product?.name || 'Produto'}{(item.option || item.base?.name) && <span className="block text-[11px] text-stone-500">Sabor: {item.option || item.base?.name}</span>}</span><span className="shrink-0 font-semibold text-stone-700">{formatCurrency(item.totalPrice ?? Number(item.unitPrice || 0) * Number(item.quantity || 0))}</span></li>)}</ul>
     </section>
 
-    <dl className="mt-3 grid grid-cols-2 gap-x-3 gap-y-2 text-xs"><dt className="text-stone-500">Pagamento</dt><dd className="break-words text-right font-medium text-stone-700">{order.paymentMethod || '—'}</dd><dt className="text-stone-500">Total</dt><dd className="text-right font-bold text-stone-900">{formatCurrency(order.total)}</dd>{order.deliveryType === 'delivery' && <><dt className="flex items-center gap-1 text-stone-500"><MapPin className="h-3.5 w-3.5" />Entrega</dt><dd className="break-words text-right text-stone-700">{order.address || 'Endereço não informado'}</dd></>}</dl>
+    <dl className="mt-3 grid grid-cols-2 gap-x-3 gap-y-2 text-xs"><dt className="text-stone-500">Pagamento</dt><dd className="break-words text-right font-medium text-stone-700">{order.paymentMethod || '—'}</dd><dt className="text-stone-500">{order.deliveryType === 'delivery' && order.deliveryQuote == null ? 'Subtotal dos produtos' : 'Total'}</dt><dd className="text-right font-bold text-stone-900">{formatCurrency(order.deliveryType === 'delivery' && order.deliveryQuote == null ? order.subtotal : order.total)}</dd>{order.deliveryType === 'delivery' && <><dt className="flex items-center gap-1 text-stone-500"><MapPin className="h-3.5 w-3.5" />Destino</dt><dd className="break-words text-right text-stone-700">{order.address || 'Endereço não informado'}</dd></>}</dl>
+
+    <CustomerQuotePanel order={order} />
 
     {cancelled ? <div className="mt-4 flex items-start gap-2 rounded-xl bg-rose-50 p-3 text-xs leading-relaxed text-rose-800"><XCircle className="mt-0.5 h-4 w-4 shrink-0" /><span>{statusMessage}</span></div> : <>
       <p className="mt-4 text-xs font-semibold text-primary">{statusMessage}</p>

@@ -1,12 +1,15 @@
 import React, { useState } from 'react';
-import { Plus, ShoppingCart } from 'lucide-react';
+import { Plus, ShoppingCart, ZoomIn } from 'lucide-react';
 import { formatCurrency } from '../utils/formatters';
 import { AnimatedText } from './AnimatedText';
+import { ImageLightbox } from './ImageLightbox';
 
 export function ProductCard({ product, onSelect, onAddToCart, onBuyNow, animationDelay = 0 }) {
   const [imageLoaded, setImageLoaded] = useState(false);
   const [imageError, setImageError] = useState(false);
+  const [imageZoomOpen, setImageZoomOpen] = useState(false);
   const unavailable = product.available === false;
+  const isDoubleCombo = product.id === 'combo-2-batidas-alcoolicas';
 
   return (
     <div
@@ -15,16 +18,19 @@ export function ProductCard({ product, onSelect, onAddToCart, onBuyNow, animatio
       data-aos-delay={animationDelay}
       className="product-card bg-white rounded-2xl p-3 sm:p-3.5 border border-stone-200/80 hover:border-primary/40 shadow-subtle hover:shadow-card flex flex-col justify-between cursor-pointer group"
     >
-      <div className="relative w-full aspect-[4/3] rounded-xl overflow-hidden bg-stone-100 border border-stone-100">
-        <img
-          src={product.image}
-          alt={product.name}
-          loading="eager"
-          decoding="async"
-          onLoad={() => setImageLoaded(true)}
-          onError={() => setImageError(true)}
-          className="w-full h-full object-cover object-center group-hover:scale-105 transition-transform duration-300 ease-out"
-        />
+      <div className={`relative w-full aspect-[4/3] rounded-xl overflow-hidden border border-stone-100 ${isDoubleCombo ? 'bg-surface-50' : 'bg-stone-100'}`}>
+        <button type="button" onClick={(event) => { event.stopPropagation(); setImageZoomOpen(true); }} aria-label={`Ampliar imagem de ${product.name}`} className="absolute inset-0 flex h-full w-full items-center justify-center focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-primary">
+          {!imageError ? <img
+            src={product.image}
+            alt={product.name}
+            loading="eager"
+            decoding="async"
+            onLoad={() => setImageLoaded(true)}
+            onError={() => setImageError(true)}
+            className={`h-full w-full transition-transform duration-300 ease-out group-hover:scale-[1.03] ${isDoubleCombo ? 'object-contain p-2 sm:p-3' : 'object-cover object-center'}`}
+          /> : <span className="px-4 text-xs text-stone-500">Imagem indisponível</span>}
+          <span className="absolute bottom-2 left-2 inline-flex items-center gap-1 rounded-lg bg-white/90 px-2 py-1 text-[10px] font-semibold text-stone-700 opacity-0 shadow-subtle transition group-hover:opacity-100 focus-visible:opacity-100"><ZoomIn className="h-3 w-3" />Ampliar</span>
+        </button>
 
         {product.tag && (
           <div className="absolute top-2 left-2 pointer-events-none">
@@ -81,6 +87,7 @@ export function ProductCard({ product, onSelect, onAddToCart, onBuyNow, animatio
               <span>{unavailable ? 'Indisponível' : product.requiresCustomization ? 'Escolher opções' : 'Comprar agora'}</span>
             </button>
           </div>
+      <ImageLightbox src={imageZoomOpen ? product.image : ''} alt={product.name} onClose={() => setImageZoomOpen(false)} />
         </div>
       </div>
     </div>

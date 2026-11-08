@@ -4,7 +4,7 @@ import { useCart } from '../context/CartContext';
 import { formatCurrency } from '../utils/formatters';
 
 export function MobileFloatingCart() {
-  const { totalCount, total, openCart } = useCart();
+  const { totalCount, subtotal, openCart } = useCart();
 
   if (totalCount === 0) return null;
 
@@ -27,13 +27,13 @@ export function MobileFloatingCart() {
               Ver sacola
             </span>
             <span className="text-sm font-bold text-white leading-tight">
-              {formatCurrency(total)}
+              {formatCurrency(subtotal)}
             </span>
           </div>
         </div>
 
         <div className="flex items-center gap-1 font-semibold text-xs text-white">
-          <span>Avançar</span>
+          <span>Subtotal · avançar</span>
           <ArrowRight className="w-3.5 h-3.5" />
         </div>
       </button>

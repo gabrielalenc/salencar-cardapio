@@ -83,6 +83,81 @@
 }
 .interactive-hover:hover { transform: translate3d(0, -2px, 0); }
 
+@keyframes dialogEnter {
+  from { opacity: 0; transform: translate3d(0, 8px, 0) scale(.99); }
+  to { opacity: 1; transform: translate3d(0, 0, 0) scale(1); }
+}
+.notification-enter {
+  animation: notificationEnter 180ms cubic-bezier(.2,.7,.25,1) both;
+}
+@keyframes notificationEnter {
+  from { opacity: 0; transform: translate3d(0, 8px, 0) scale(.985); }
+  to { opacity: 1; transform: translate3d(0, 0, 0) scale(1); }
+}
+
+.account-dialog {
+  animation: dialogEnter 180ms ease-out both;
+}
+.account-dialog input:not([type='checkbox']),
+.account-dialog textarea,
+.account-dialog select {
+  min-height: 46px;
+  border-radius: 12px;
+  transition: border-color 160ms ease, box-shadow 160ms ease, background-color 160ms ease;
+}
+.account-dialog input:focus,
+.account-dialog textarea:focus,
+.account-dialog select:focus {
+  border-color: #9d6879;
+  box-shadow: 0 0 0 3px rgba(112, 40, 63, .1);
+}
+.account-dialog button {
+  transition: color 160ms ease, background-color 160ms ease, border-color 160ms ease, box-shadow 160ms ease, transform 160ms ease;
+}
+.account-dialog button:focus-visible,
+.admin-panel button:focus-visible,
+.admin-panel select:focus-visible,
+.admin-panel input:focus-visible,
+.admin-panel textarea:focus-visible {
+  outline: 2px solid rgba(112, 40, 63, .5);
+  outline-offset: 2px;
+}
+
+.admin-panel main > section:first-child {
+  box-shadow: 0 3px 12px rgba(48, 37, 42, .035);
+}
+.admin-panel table thead {
+  box-shadow: inset 0 -1px #eee5dd;
+}
+.admin-panel table tbody tr {
+  transition: background-color 140ms ease;
+}
+.admin-panel table tbody td {
+  vertical-align: middle;
+}
+.admin-panel article {
+  transition: border-color 160ms ease, box-shadow 160ms ease, transform 160ms ease;
+}
+.admin-panel article:focus-within {
+  border-color: #c9aab5;
+  box-shadow: 0 0 0 3px rgba(112, 40, 63, .07);
+}
+.admin-panel [role='dialog'] {
+  animation: dialogEnter 180ms ease-out both;
+}
+
+@media (max-width: 639px) {
+  .account-dialog input:not([type='checkbox']),
+  .account-dialog textarea,
+  .account-dialog select { font-size: 16px; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .account-dialog,
+  .admin-panel [role='dialog'],
+  .notification-enter { animation: none; }
+}
+
 /* AOS hides elements only after initialization; keep the page readable before that. */
 html:not(.aos-enabled) [data-aos] {
   opacity: 1;

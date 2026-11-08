@@ -6,6 +6,7 @@ import {
 import { useCart } from '../context/CartContext';
 import { formatCurrency, formatPhone, formatCEP, fetchAddressByCEP } from '../utils/formatters';
 import { useAuth } from '../context/AuthContext';
+import { useNotifications } from './Notifications';
 
 const steps = ['Endereço', 'Pagamento', 'Revisão'];
 
@@ -35,10 +36,11 @@ function PaymentOption({ value, label, icon: Icon, selected, onSelect }) {
 
 export function CheckoutModal({ onOrderSuccess, onRequestAuth }) {
   const {
-    isCheckoutOpen, closeCheckout, items, subtotal, deliveryFee, total,
+    isCheckoutOpen, closeCheckout, items, subtotal, total,
     deliveryType, setDeliveryType, clearCart,
   } = useCart();
   const { currentUser, authLoading, recordOrder, settings, canFulfillItems, addresses, paymentPreference } = useAuth();
+  const { notify } = useNotifications();
   const [step, setStep] = useState(1);
   const [formData, setFormData] = useState({
     name: '', phone: '', cep: '', street: '', number: '', complement: '',
@@ -142,7 +144,7 @@ export function CheckoutModal({ onOrderSuccess, onRequestAuth }) {
     const errors = {};
     if (formData.paymentMethod === 'money' && formData.needsChange === 'sim') {
       const amount = Number(formData.changeFor.replace(',', '.'));
-      if (!Number.isFinite(amount) || amount <= total) errors.changeFor = `Informe um valor acima do total (${formatCurrency(total)}).`;
+      if (!Number.isFinite(amount) || amount <= subtotal) errors.changeFor = `Informe um valor acima do subtotal (${formatCurrency(subtotal)}). O total final incluirá a cotação da entrega.`;
     }
     setFormErrors(errors);
     return Object.keys(errors).length === 0;
@@ -165,10 +167,10 @@ export function CheckoutModal({ onOrderSuccess, onRequestAuth }) {
     const changeInfo = formData.paymentMethod !== 'money'
       ? ''
       : formData.needsChange === 'sim'
-        ? `\nTroco para ${formatCurrency(Number(formData.changeFor.replace(',', '.')))} (troco estimado: ${formatCurrency(Number(formData.changeFor.replace(',', '.')) - total)})`
+        ? `\nTroco para ${formatCurrency(Number(formData.changeFor.replace(',', '.')))} (o total final depende da cotação da entrega)`
         : '\nSem necessidade de troco (valor exato)';
     const itemNotes = formData.orderNotes.trim() ? `\nObservações do pedido: ${formData.orderNotes.trim()}` : '';
-    return `NOVO PEDIDO — ${settings.name}\n${orderId ? `Pedido: ${orderId}\n` : ''}\nCliente: ${formData.name.trim()}\nE-mail: ${currentUser.email}\nWhatsApp: ${formData.phone.trim()}\n\nENDEREÇO\n${address}\n\nITENS\n${products}\n\nSubtotal: ${formatCurrency(subtotal)}\nEntrega: ${deliveryType === 'pickup' ? 'Retirada sem taxa' : deliveryFee === 0 ? 'Grátis' : formatCurrency(deliveryFee)}\nTOTAL: ${formatCurrency(total)}\n\nPagamento: ${paymentLabel}${changeInfo}${formData.paymentMethod === 'pix' ? `\nChave Pix: ${settings.pix.key}` : ''}${itemNotes}\n\nAgradeço pela preferência!`;
+    return `NOVO PEDIDO — ${settings.name}\n${orderId ? `Pedido: ${orderId}\n` : ''}\nCliente: ${formData.name.trim()}\nE-mail: ${currentUser.email}\nWhatsApp: ${formData.phone.trim()}\n\nENDEREÇO\n${address}\n\nITENS\n${products}\n\nSubtotal dos produtos: ${formatCurrency(subtotal)}\nEntrega: ${deliveryType === 'pickup' ? 'Retirada no local' : 'Aguardando cotação da loja'}\n${deliveryType === 'delivery' ? 'Total final: será informado após a cotação e enviado para aprovação.' : `Total: ${formatCurrency(subtotal)}`}\n\nPagamento: ${paymentLabel}${changeInfo}${formData.paymentMethod === 'pix' ? `\nChave Pix: ${settings.pix.key}` : ''}${itemNotes}\n\nAgradeço pela preferência!`;
   };
 
   const handleFinishOrder = async (event) => {
@@ -204,8 +206,8 @@ export function CheckoutModal({ onOrderSuccess, onRequestAuth }) {
           totalPrice: item.totalPrice,
         })),
         subtotal,
-        deliveryFee,
-        total,
+        deliveryFee: 0,
+        total: subtotal,
         deliveryType,
         address: deliveryType === 'delivery' ? `${formData.street}, ${formData.number}${formData.complement ? `, ${formData.complement}` : ''}; ${formData.neighborhood}, ${formData.city}; CEP ${formData.cep}${formData.reference ? `; Referência: ${formData.reference}` : ''}` : settings.pickupAddress,
         addressSnapshot,
@@ -220,12 +222,14 @@ export function CheckoutModal({ onOrderSuccess, onRequestAuth }) {
       const message = buildWhatsAppMessage(savedOrder.id);
       const whatsappUrl = `https://wa.me/${settings.whatsappNumber}?text=${encodeURIComponent(message)}`;
       if (whatsappWindow) whatsappWindow.location.href = whatsappUrl;
-      onOrderSuccess?.({ customer: formData.name, phone: formData.phone, items: [...items], total, whatsappUrl, message, paymentMethod: formData.paymentMethod, orderId: savedOrder.id });
+      onOrderSuccess?.({ customer: formData.name, phone: formData.phone, items: [...items], subtotal, total, deliveryType, whatsappUrl, message, paymentMethod: formData.paymentMethod, orderId: savedOrder.id });
+      notify({ type: 'success', title: 'Pedido registrado', message: deliveryType === 'delivery' ? 'A loja vai calcular a entrega e enviar o valor para sua aprovação.' : 'Seu pedido foi enviado para a loja.' });
       clearCart();
       closeCheckout();
     } catch (err) {
       whatsappWindow?.close();
       setOrderError(err.message || 'Não foi possível registrar o pedido.');
+      notify({ type: 'error', title: 'Não foi possível registrar o pedido', message: err.message || 'Revise os dados e tente novamente.' });
       console.error('Erro ao finalizar pedido:', err);
     } finally {
       setIsSubmitting(false);
@@ -262,7 +266,7 @@ export function CheckoutModal({ onOrderSuccess, onRequestAuth }) {
               <section className="space-y-4">
                 <div><h3 className="font-semibold text-stone-900">Como vamos receber o pedido?</h3><p className="mt-1 text-sm text-stone-500">Escolha entrega ou retirada no local.</p></div>
                 <div className="grid grid-cols-2 gap-3">
-                  {[['delivery', 'Entrega', Truck, deliveryFee === 0 ? 'Grátis' : formatCurrency(deliveryFee)], ['pickup', 'Retirada', Store, 'Sem taxa']].map(([value, label, Icon, detail]) => <button key={value} type="button" onClick={() => setDeliveryType(value)} className={`flex items-center gap-3 rounded-xl border p-3 text-left ${deliveryType === value ? 'border-primary bg-primary/5' : 'border-stone-200 hover:bg-stone-50'}`}><Icon className={`h-5 w-5 ${deliveryType === value ? 'text-primary' : 'text-stone-500'}`} /><span><span className="block text-sm font-medium text-stone-800">{label}</span><span className="text-xs text-stone-500">{detail}</span></span></button>)}
+                  {[['delivery', 'Entrega', Truck, 'Valor a cotar após o pedido'], ['pickup', 'Retirada', Store, 'Sem cobrança de entrega']].map(([value, label, Icon, detail]) => <button key={value} type="button" onClick={() => setDeliveryType(value)} className={`flex items-center gap-3 rounded-xl border p-3 text-left ${deliveryType === value ? 'border-primary bg-primary/5' : 'border-stone-200 hover:bg-stone-50'}`}><Icon className={`h-5 w-5 ${deliveryType === value ? 'text-primary' : 'text-stone-500'}`} /><span><span className="block text-sm font-medium text-stone-800">{label}</span><span className="text-xs text-stone-500">{detail}</span></span></button>)}
                 </div>
               </section>
               <section className="space-y-4 border-t border-stone-100 pt-5">
@@ -293,7 +297,7 @@ export function CheckoutModal({ onOrderSuccess, onRequestAuth }) {
                 <CheckoutField label="Referência" optional field="reference" value={formData.reference} onChange={(value) => change('reference', value)} error={formErrors.reference} inputClass={inputClass('reference')} placeholder="Ponto de referência" />
                 <label className="flex min-h-11 items-center gap-2 rounded-lg bg-primary-light/40 px-3 text-xs font-medium text-stone-700"><input type="checkbox" checked={saveAddressForNext} onChange={(event) => setSaveAddressForNext(event.target.checked)} />Salvar este endereço para os próximos pedidos</label>
               </section>}
-              <section className="rounded-xl bg-stone-50 p-4"><div className="flex items-center justify-between"><h3 className="font-medium text-stone-800">Seu pedido</h3><span className="text-sm text-stone-500">{items.reduce((sum, item) => sum + item.quantity, 0)} itens</span></div><div className="mt-3 space-y-2">{items.map((item) => <div key={item.cartKey} className="flex justify-between gap-3 text-sm"><span className="text-stone-600">{item.quantity}x {item.product.name}</span><span className="shrink-0 text-stone-700">{formatCurrency(item.totalPrice)}</span></div>)}</div><div className="mt-3 border-t border-stone-200 pt-3 text-sm"><div className="flex justify-between text-stone-500"><span>Subtotal</span><span>{formatCurrency(subtotal)}</span></div><div className="mt-1 flex justify-between text-stone-500"><span>Entrega</span><span>{deliveryType === 'pickup' ? 'Retirada' : deliveryFee === 0 ? 'Grátis' : formatCurrency(deliveryFee)}</span></div><div className="mt-2 flex justify-between font-semibold text-stone-900"><span>Total</span><span>{formatCurrency(total)}</span></div></div></section>
+              <section className="rounded-xl bg-stone-50 p-4"><div className="flex items-center justify-between"><h3 className="font-medium text-stone-800">Seu pedido</h3><span className="text-sm text-stone-500">{items.reduce((sum, item) => sum + item.quantity, 0)} itens</span></div><div className="mt-3 space-y-2">{items.map((item) => <div key={item.cartKey} className="flex justify-between gap-3 text-sm"><span className="text-stone-600">{item.quantity}x {item.product.name}</span><span className="shrink-0 text-stone-700">{formatCurrency(item.totalPrice)}</span></div>)}</div><div className="mt-3 space-y-2 border-t border-stone-200 pt-3 text-sm"><div className="flex justify-between text-stone-500"><span>Subtotal dos produtos</span><span>{formatCurrency(subtotal)}</span></div><div className="rounded-lg border border-primary/10 bg-white px-3 py-2 text-xs leading-relaxed text-stone-600">{deliveryType === 'pickup' ? 'Retirada no local. O valor acima é o total do pedido.' : 'O valor da entrega será calculado pela loja e enviado para sua aprovação antes da confirmação.'}</div></div></section>
             </>}
 
             {step === 2 && <>
@@ -302,13 +306,13 @@ export function CheckoutModal({ onOrderSuccess, onRequestAuth }) {
               {formData.paymentMethod === 'money' && <section className="space-y-4 rounded-xl bg-stone-50 p-4"><h4 className="text-sm font-semibold text-stone-800">Precisa de troco?</h4><div className="grid grid-cols-2 gap-3"><button type="button" onClick={() => change('needsChange', 'nao')} aria-pressed={formData.needsChange === 'nao'} className={`rounded-lg border px-3 py-3 text-sm ${formData.needsChange === 'nao' ? 'border-primary bg-white text-primary' : 'border-stone-200 bg-white text-stone-600'}`}>Não, valor exato</button><button type="button" onClick={() => change('needsChange', 'sim')} aria-pressed={formData.needsChange === 'sim'} className={`rounded-lg border px-3 py-3 text-sm ${formData.needsChange === 'sim' ? 'border-primary bg-white text-primary' : 'border-stone-200 bg-white text-stone-600'}`}>Sim, preciso</button></div>{formData.needsChange === 'sim' && <label className="block"><span className="mb-1.5 block text-xs font-medium text-stone-700">Troco para quanto?</span><span className="flex items-center gap-2"><span className="text-sm text-stone-500">R$</span><input inputMode="decimal" value={formData.changeFor} onChange={(event) => change('changeFor', event.target.value)} placeholder="50,00" className={inputClass('changeFor')} /></span>{formErrors.changeFor && <span className="mt-1 block text-xs text-rose-600">{formErrors.changeFor}</span>}</label>}</section>}
               {formData.paymentMethod === 'pix' && <p className="rounded-xl bg-stone-50 p-4 text-sm text-stone-600">A chave Pix ({settings.pix.key}) será enviada junto com os dados do pedido.</p>}
               {(formData.paymentMethod === 'credit' || formData.paymentMethod === 'debit') && <p className="rounded-xl bg-stone-50 p-4 text-sm text-stone-600">O entregador levará a maquininha no momento da entrega.</p>}
-              <section className="rounded-xl border border-stone-200 p-4"><div className="flex justify-between text-sm text-stone-500"><span>Total do pedido</span><span className="font-semibold text-stone-900">{formatCurrency(total)}</span></div></section>
+              <section className="rounded-xl border border-stone-200 p-4"><div className="flex justify-between text-sm text-stone-500"><span>Subtotal dos produtos</span><span className="font-semibold text-stone-900">{formatCurrency(subtotal)}</span></div><p className="mt-2 text-xs leading-relaxed text-stone-500">{deliveryType === 'delivery' ? 'A entrega será cotada pela loja após o envio. Você poderá aprovar ou recusar o valor.' : 'Retirada no local, sem cobrança de entrega.'}</p></section>
             </>}
 
             {step === 3 && <>
               <div><h3 className="font-semibold text-stone-900">Confira seu pedido</h3><p className="mt-1 text-sm text-stone-500">Revise os dados antes de enviar pelo WhatsApp.</p></div>
               <section className="space-y-3 rounded-xl bg-stone-50 p-4"><div><h4 className="text-xs font-semibold uppercase tracking-wide text-stone-500">Cliente</h4><p className="mt-1 text-sm text-stone-800">{formData.name} · {formData.phone}</p></div><div className="border-t border-stone-200 pt-3"><h4 className="text-xs font-semibold uppercase tracking-wide text-stone-500">{deliveryType === 'delivery' ? 'Endereço' : 'Retirada'}</h4><p className="mt-1 whitespace-pre-line text-sm text-stone-800">{deliveryType === 'delivery' ? `${formData.street}, ${formData.number}${formData.complement ? `, ${formData.complement}` : ''}\n${formData.neighborhood}, ${formData.city} — CEP ${formData.cep}${formData.reference ? `\nReferência: ${formData.reference}` : ''}` : settings.pickupAddress}</p></div><div className="border-t border-stone-200 pt-3"><h4 className="text-xs font-semibold uppercase tracking-wide text-stone-500">Pagamento</h4><p className="mt-1 text-sm text-stone-800">{paymentLabel}{formData.paymentMethod === 'money' ? formData.needsChange === 'sim' ? ` · Troco para ${formatCurrency(Number(formData.changeFor.replace(',', '.')))} (devolver ${formatCurrency(Number(formData.changeFor.replace(',', '.')) - total)})` : ' · Valor exato' : ''}</p></div></section>
-              <section className="rounded-xl border border-stone-200 p-4"><h4 className="mb-3 text-sm font-semibold text-stone-800">Produtos</h4><div className="space-y-4">{items.map((item) => <div key={item.cartKey} className="flex justify-between gap-3 text-sm"><div><p className="font-medium text-stone-800">{item.quantity}x {item.product.name}{item.base ? ` — ${item.base.name}` : ''}</p>{item.extras?.length > 0 && <p className="mt-1 text-xs text-stone-500">Adicionais: {item.extras.map((extra) => extra.name).join(', ')}</p>}{item.notes && <p className="mt-1 text-xs text-stone-500">Observação: {item.notes}</p>}</div><span className="shrink-0 font-medium text-stone-700">{formatCurrency(item.totalPrice)}</span></div>)}</div><label className="mt-4 block border-t border-stone-100 pt-4"><span className="mb-1.5 block text-xs font-medium text-stone-700">Observação para o pedido (opcional)</span><textarea rows={2} value={formData.orderNotes} onChange={(event) => change('orderNotes', event.target.value)} placeholder="Instruções para a entrega..." className={inputClass('orderNotes')} /></label><div className="mt-4 space-y-2 border-t border-stone-100 pt-3 text-sm"><div className="flex justify-between text-stone-500"><span>Subtotal</span><span>{formatCurrency(subtotal)}</span></div><div className="flex justify-between text-stone-500"><span>Entrega</span><span>{deliveryType === 'pickup' ? 'Retirada sem taxa' : deliveryFee === 0 ? 'Grátis' : formatCurrency(deliveryFee)}</span></div><div className="flex justify-between border-t border-stone-100 pt-3 text-base font-semibold text-stone-900"><span>Total</span><span>{formatCurrency(total)}</span></div></div></section>
+              <section className="rounded-xl border border-stone-200 p-4"><h4 className="mb-3 text-sm font-semibold text-stone-800">Produtos</h4><div className="space-y-4">{items.map((item) => <div key={item.cartKey} className="flex justify-between gap-3 text-sm"><div><p className="font-medium text-stone-800">{item.quantity}x {item.product.name}{item.base ? ` — ${item.base.name}` : ''}</p>{item.extras?.length > 0 && <p className="mt-1 text-xs text-stone-500">Adicionais: {item.extras.map((extra) => extra.name).join(', ')}</p>}{item.notes && <p className="mt-1 text-xs text-stone-500">Observação: {item.notes}</p>}</div><span className="shrink-0 font-medium text-stone-700">{formatCurrency(item.totalPrice)}</span></div>)}</div><label className="mt-4 block border-t border-stone-100 pt-4"><span className="mb-1.5 block text-xs font-medium text-stone-700">Observação para o pedido (opcional)</span><textarea rows={2} value={formData.orderNotes} onChange={(event) => change('orderNotes', event.target.value)} placeholder="Instruções para a entrega..." className={inputClass('orderNotes')} /></label><div className="mt-4 space-y-2 border-t border-stone-100 pt-3 text-sm"><div className="flex justify-between text-stone-500"><span>Subtotal dos produtos</span><span>{formatCurrency(subtotal)}</span></div><div className="rounded-lg bg-stone-50 px-3 py-2 text-xs leading-relaxed text-stone-600">{deliveryType === 'pickup' ? 'Total na retirada' : 'Entrega a cotar pela loja; o total final será enviado para sua aprovação.'}</div>{deliveryType === 'pickup' && <div className="flex justify-between border-t border-stone-100 pt-3 text-base font-semibold text-stone-900"><span>Total</span><span>{formatCurrency(total)}</span></div>}</div></section>
             </>}
           </main>
           <footer className="flex gap-3 border-t border-stone-100 bg-white px-4 py-4 pb-[max(1rem,env(safe-area-inset-bottom))] sm:px-8">

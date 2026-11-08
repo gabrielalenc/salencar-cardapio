@@ -1,9 +1,12 @@
 export const CUSTOMER_ORDER_STATUS = {
-  new: 'Aguardando confirmação',
-  confirmed: 'Pedido recebido',
+  new: 'Pedido legado',
+  awaiting_delivery_quote: 'Aguardando cotação de entrega',
+  awaiting_customer_approval: 'Aguardando aprovação do cliente',
+  confirmed: 'Pedido confirmado',
   preparing: 'Em preparação',
   out_for_delivery: 'Saiu para entrega',
   completed: 'Concluído',
+  quote_rejected: 'Cotação recusada',
   cancelled: 'Cancelado',
 };
 
@@ -35,7 +38,7 @@ export function splitCustomerOrders(orders) {
   const all = dedupeOrders(orders);
   return {
     active: all.filter((order) => !['completed', 'cancelled'].includes(order.status)),
-    past: all.filter((order) => ['completed', 'cancelled'].includes(order.status)),
+    past: all.filter((order) => ['completed', 'quote_rejected', 'cancelled'].includes(order.status)),
   };
 }
 

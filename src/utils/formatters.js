@@ -6,6 +6,17 @@ export function formatCurrency(value) {
   });
 }
 
+export function parseBrazilianCurrency(value) {
+  if (typeof value === 'number') return Number.isFinite(value) ? value : NaN;
+  const normalized = String(value || '').replace(/R\$|\s/g, '').trim();
+  if (!normalized) return NaN;
+  const decimal = normalized.includes(',')
+    ? normalized.replace(/\./g, '').replace(',', '.')
+    : normalized;
+  const parsed = Number(decimal);
+  return Number.isFinite(parsed) && parsed >= 0 ? Math.round(parsed * 100) / 100 : NaN;
+}
+
 export function formatPhone(value) {
   if (!value) return '';
   const digits = value.replace(/\D/g, '').slice(0, 11);

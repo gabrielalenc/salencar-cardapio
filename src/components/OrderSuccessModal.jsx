@@ -1,12 +1,9 @@
 import React, { useState } from 'react';
-import { CheckCircle2, MessageSquare, Copy, Check, ExternalLink, Clock } from 'lucide-react';
+import { CheckCircle2, MessageSquare, Copy, Check, ExternalLink } from 'lucide-react';
 import { formatCurrency } from '../utils/formatters';
-import { useAuth } from '../context/AuthContext';
 
 export function OrderSuccessModal({ orderData, onClose }) {
   const [copied, setCopied] = useState(false);
-  const { settings } = useAuth();
-
   if (!orderData) return null;
 
   const handleCopy = () => {
@@ -32,12 +29,10 @@ export function OrderSuccessModal({ orderData, onClose }) {
         </div>
 
         <h2 className="font-display font-bold text-xl text-stone-900">
-          Pedido gerado com sucesso!
+          Pedido registrado!
         </h2>
 
-        <p className="text-xs sm:text-sm text-stone-600 mt-2 max-w-sm mx-auto leading-relaxed">
-          Abrimos a conversa no WhatsApp oficial da Salencar com os detalhes do seu pedido. Caso não tenha aberto automaticamente, clique no botão abaixo:
-        </p>
+        <p className="text-xs sm:text-sm text-stone-600 mt-2 max-w-sm mx-auto leading-relaxed">{orderData.deliveryType === 'delivery' ? 'A entrega ainda será cotada pela loja. Você receberá o valor final para aprovar antes da confirmação do pedido.' : 'Seu pedido foi registrado para retirada no local.'} A conversa no WhatsApp permite compartilhar os dados do pedido com a loja.</p>
 
         {/* Botão de Envio WhatsApp */}
         <div className="mt-5 space-y-2">
@@ -71,25 +66,9 @@ export function OrderSuccessModal({ orderData, onClose }) {
         </div>
 
         {/* Resumo */}
-        <div className="mt-5 pt-4 border-t border-stone-100 grid grid-cols-2 gap-3 text-left">
-          <div className="bg-surface-50 p-2.5 rounded-lg border border-stone-200/60">
-            <span className="text-[10px] font-bold text-stone-500 uppercase flex items-center gap-1">
-              <Clock className="w-3 h-3 text-primary" />
-              Tempo Estimado
-            </span>
-            <p className="text-xs font-semibold text-stone-900 mt-0.5">
-              {settings.estimatedDeliveryTime}
-            </p>
-          </div>
-
-          <div className="bg-surface-50 p-2.5 rounded-lg border border-stone-200/60">
-            <span className="text-[10px] font-bold text-stone-500 uppercase">
-              Total do Pedido
-            </span>
-            <p className="text-xs font-semibold text-primary mt-0.5">
-              {formatCurrency(orderData.total)}
-            </p>
-          </div>
+        <div className="mt-5 space-y-2 border-t border-stone-100 pt-4 text-left">
+          <div className="flex items-center justify-between text-xs text-stone-600"><span>Subtotal dos produtos</span><strong className="text-stone-900">{formatCurrency(orderData.subtotal ?? orderData.total)}</strong></div>
+          {orderData.deliveryType === 'delivery' ? <div className="rounded-lg bg-primary-light/70 px-3 py-2 text-xs leading-relaxed text-primary">Entrega a cotar. O total final ainda não está confirmado.</div> : <div className="flex items-center justify-between text-xs font-bold text-stone-900"><span>Total</span><span>{formatCurrency(orderData.total)}</span></div>}
         </div>
 
         {/* Fechar */}

@@ -2,6 +2,7 @@ import React, { useEffect, useRef, useState } from 'react';
 import { LogIn, LogOut, ShieldCheck, ShoppingBag, UserRound } from 'lucide-react';
 import { useCart } from '../context/CartContext';
 import { useAuth } from '../context/AuthContext';
+import { useNotifications } from './Notifications';
 
 export function Header({ onOpenAccount, onOpenTracking, onOpenAdminPanel }) {
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
@@ -9,6 +10,7 @@ export function Header({ onOpenAccount, onOpenTracking, onOpenAdminPanel }) {
   const mobileMenuButtonRef = useRef(null);
   const { totalCount, openCart } = useCart();
   const { currentUser, settings, logout } = useAuth();
+  const { confirm, notify } = useNotifications();
 
   useEffect(() => {
     if (!mobileMenuOpen) return undefined;
@@ -32,8 +34,12 @@ export function Header({ onOpenAccount, onOpenTracking, onOpenAdminPanel }) {
   }, [mobileMenuOpen]);
 
   const closeMobileMenu = () => setMobileMenuOpen(false);
-  const confirmLogout = () => {
-    if (window.confirm('Deseja sair da sua conta?')) logout();
+  const confirmLogout = async () => {
+    const accepted = await confirm({ title: 'Sair da sua conta?', message: 'Você precisará entrar novamente para acompanhar seus pedidos.', confirmLabel: 'Sair', destructive: true });
+    if (accepted) {
+      const result = await logout();
+      if (!result.ok) notify({ type: 'error', title: 'Não foi possível sair', message: result.error });
+    }
     closeMobileMenu();
   };
   const openAccount = () => {
@@ -82,7 +88,7 @@ export function Header({ onOpenAccount, onOpenTracking, onOpenAdminPanel }) {
             <button type="button" onClick={onOpenAccount} className="inline-flex min-w-0 max-w-[105px] items-center gap-1 rounded-xl px-1.5 py-2 text-[11px] font-semibold text-stone-600 transition hover:bg-stone-50 hover:text-primary sm:max-w-48 sm:gap-1.5 sm:px-2 sm:text-xs lg:max-w-36 xl:max-w-48" aria-label="Abrir opções da conta">
               <UserRound className="h-4 w-4 shrink-0" /><span className="truncate">Olá, {currentUser.name}</span>
             </button>
-            <button type="button" onClick={() => { if (window.confirm('Deseja sair da sua conta?')) logout(); }} aria-label="Sair da conta" title="Sair da conta" className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl text-stone-500 transition hover:bg-rose-50 hover:text-rose-700 sm:h-10 sm:w-10"><LogOut className="h-4 w-4" /></button>
+            <button type="button" onClick={confirmLogout} aria-label="Sair da conta" title="Sair da conta" className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl text-stone-500 transition hover:bg-rose-50 hover:text-rose-700 sm:h-10 sm:w-10"><LogOut className="h-4 w-4" /></button>
           </div> : <button type="button" onClick={currentUser?.role === 'admin' ? onOpenAdminPanel : onOpenAccount} className="inline-flex max-w-36 items-center gap-2 rounded-xl px-2 py-2 text-xs font-semibold text-stone-600 transition hover:bg-stone-50 hover:text-primary sm:max-w-48 sm:px-3" aria-label={currentUser?.role === 'admin' ? 'Abrir painel administrativo' : 'Entrar ou criar uma conta'}>
             {currentUser?.role === 'admin' ? <ShieldCheck className="h-4 w-4 shrink-0" /> : <LogIn className="h-4 w-4 shrink-0" />}
             <span className="truncate">{currentUser?.role === 'admin' ? 'Painel' : 'Entrar'}</span>

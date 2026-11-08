@@ -2,6 +2,7 @@ import React from 'react';
 import { X, Trash2, Plus, Minus, ShoppingBag, ArrowRight } from 'lucide-react';
 import { useCart } from '../context/CartContext';
 import { formatCurrency } from '../utils/formatters';
+import { useNotifications } from './Notifications';
 
 export function CartDrawer() {
   const {
@@ -12,12 +13,19 @@ export function CartDrawer() {
     removeFromCart,
     clearCart,
     subtotal,
-    deliveryFee,
     total,
-    isFreeDelivery,
-    amountToFreeDelivery,
     openCheckout
   } = useCart();
+  const { confirm } = useNotifications();
+
+  const confirmRemove = async (item) => {
+    const accepted = await confirm({ title: 'Remover produto?', message: `Deseja remover ${item.product.name} da sacola?`, confirmLabel: 'Remover', destructive: true });
+    if (accepted) removeFromCart(item.cartKey);
+  };
+  const confirmClear = async () => {
+    const accepted = await confirm({ title: 'Limpar a sacola?', message: 'Todos os produtos adicionados serão removidos.', confirmLabel: 'Limpar sacola', destructive: true });
+    if (accepted) clearCart();
+  };
 
   if (!isCartOpen) return null;
 
@@ -54,21 +62,6 @@ export function CartDrawer() {
               <X className="w-5 h-5" />
             </button>
           </div>
-
-          {/* Aviso Discreto de Frete */}
-          {items.length > 0 && (
-            <div className="bg-surface-50 border-b border-stone-200 px-4 py-2.5 text-xs text-stone-600">
-              {isFreeDelivery ? (
-                <span className="font-semibold text-primary">
-                  Você atingiu o valor para Frete Grátis.
-                </span>
-              ) : (
-                <span>
-                  Faltam <strong className="text-stone-900 font-bold">{formatCurrency(amountToFreeDelivery)}</strong> para entrega grátis.
-                </span>
-              )}
-            </div>
-          )}
 
           {/* Lista de Itens */}
           <div className="flex-1 overflow-y-auto p-4 divide-y divide-stone-100">
@@ -111,7 +104,7 @@ export function CartDrawer() {
                         {item.product.name}
                       </h4>
                       <button
-                        onClick={() => removeFromCart(item.cartKey)}
+                        onClick={() => confirmRemove(item)}
                         className="text-stone-400 hover:text-rose-600 transition-colors p-0.5"
                         title="Remover item"
                       >
@@ -181,14 +174,11 @@ export function CartDrawer() {
                   <span>Subtotal</span>
                   <span className="font-semibold text-stone-800">{formatCurrency(subtotal)}</span>
                 </div>
-                <div className="flex justify-between">
-                  <span>Taxa de Entrega</span>
-                  <span className={`font-semibold ${isFreeDelivery ? 'text-primary' : 'text-stone-800'}`}>
-                    {isFreeDelivery ? 'Grátis' : formatCurrency(deliveryFee)}
-                  </span>
+                <div className="rounded-lg border border-primary/10 bg-white px-3 py-2 text-[11px] leading-relaxed text-stone-600">
+                  A entrega será cotada pela loja depois que você enviar o pedido. Você poderá aprovar o valor antes da confirmação.
                 </div>
                 <div className="pt-2 border-t border-stone-200 flex justify-between items-baseline text-sm">
-                  <span className="font-bold text-stone-900">Total</span>
+                  <span className="font-bold text-stone-900">Subtotal dos produtos</span>
                   <span className="font-bold text-base text-primary">
                     {formatCurrency(total)}
                   </span>
@@ -212,7 +202,7 @@ export function CartDrawer() {
                     Continuar comprando
                   </button>
                   <button
-                    onClick={clearCart}
+                    onClick={confirmClear}
                     className="hover:text-rose-600 transition-colors"
                   >
                     Limpar carrinho

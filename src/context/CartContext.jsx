@@ -1,19 +1,24 @@
-import React, { createContext, useContext, useState, useEffect, useMemo, useRef } from 'react';
+import React, { createContext, useContext, useState, useEffect, useMemo } from 'react';
 import { PRODUCTS } from '../data/products';
 import { useAuth } from './AuthContext';
+import { useNotifications } from '../components/Notifications';
 
 const CartContext = createContext();
 
 const CART_STORAGE_KEY = 'salencar_delivery_cart_v1';
 const activeProductsById = new Map(PRODUCTS.map((product) => [product.id, product]));
 
-function sanitizeCartItems(savedItems) {
+function normalizeText(value) {
+  return String(value || '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').trim().toLowerCase();
+}
+
+function sanitizeCartItems(savedItems, productSettings = {}) {
   if (!Array.isArray(savedItems)) return [];
 
   return savedItems.flatMap((item) => {
     const baseProduct = activeProductsById.get(item?.product?.id);
     if (!baseProduct) return [];
-    const override = readStorage(KEYS.products, {})[baseProduct.id] || {};
+    const override = productSettings[baseProduct.id] || {};
     if (override.active === false || override.available === false) return [];
     const product = { ...baseProduct, ...(override.price !== undefined && override.price !== '' ? { price: Number(override.price) } : {}) };
 
@@ -41,12 +46,13 @@ function sanitizeCartItems(savedItems) {
 }
 
 export function CartProvider({ children }) {
-  const { settings } = useAuth();
+  const { productSettings, inventory, stockAvailability } = useAuth();
+  const { notify } = useNotifications();
   // Inicialização com localStorage
   const [items, setItems] = useState(() => {
     try {
       const saved = localStorage.getItem(CART_STORAGE_KEY);
-      return saved ? sanitizeCartItems(JSON.parse(saved)) : [];
+      return saved ? sanitizeCartItems(JSON.parse(saved), productSettings) : [];
     } catch (e) {
       console.error('Erro ao recuperar carrinho do localStorage:', e);
       return [];
@@ -57,8 +63,6 @@ export function CartProvider({ children }) {
   const [isCheckoutOpen, setIsCheckoutOpen] = useState(false);
   const [selectedProduct, setSelectedProduct] = useState(null);
   const [deliveryType, setDeliveryType] = useState('delivery'); // 'delivery' ou 'pickup'
-  const [addedProductName, setAddedProductName] = useState('');
-  const addedToastTimer = useRef(null);
 
   // Salvar no localStorage a cada alteração
   useEffect(() => {
@@ -68,8 +72,6 @@ export function CartProvider({ children }) {
       console.error('Erro ao salvar carrinho no localStorage:', e);
     }
   }, [items]);
-
-  useEffect(() => () => window.clearTimeout(addedToastTimer.current), []);
 
   // Gerar chave única para itens com diferentes personalizações
   const generateCartKey = (productId, baseId, extras, notes) => {
@@ -87,9 +89,7 @@ export function CartProvider({ children }) {
     const cartKey = generateCartKey(product.id, base?.id, extras, notes);
 
     if (showToast) {
-      setAddedProductName(product.name);
-      window.clearTimeout(addedToastTimer.current);
-      addedToastTimer.current = window.setTimeout(() => setAddedProductName(''), 2800);
+      notify({ type: 'success', title: 'Adicionado à sacola', message: product.name, duration: 2600 });
     }
 
     setItems(prevItems => {
@@ -99,6 +99,7 @@ export function CartProvider({ children }) {
         const newQty = updated[existingIndex].quantity + quantity;
         updated[existingIndex] = {
           ...updated[existingIndex],
+          unitPrice,
           quantity: newQty,
           totalPrice: newQty * unitPrice
         };
@@ -122,6 +123,72 @@ export function CartProvider({ children }) {
 
     // Fecha modal de detalhes se estiver aberto
     setSelectedProduct(null);
+  };
+
+  const addOrderToCart = (order) => {
+    const unavailable = [];
+    const reservedStock = new Map();
+    let addedCount = 0;
+    for (const item of order?.items || []) {
+      const productId = item.productId || item.product?.id;
+      const sourceProduct = activeProductsById.get(productId);
+      const override = productSettings[productId] || {};
+      const quantity = Math.floor(Number(item.quantity));
+      if (!sourceProduct || override.active === false || override.available === false || !Number.isFinite(quantity) || quantity < 1) {
+        unavailable.push(item.productName || sourceProduct?.name || 'Um produto do pedido');
+        continue;
+      }
+
+      const currentPrice = override.price !== undefined && override.price !== '' ? Number(override.price) : sourceProduct.price;
+      if (!Number.isFinite(currentPrice) || currentPrice < 0) {
+        unavailable.push(sourceProduct.name);
+        continue;
+      }
+      const product = { ...sourceProduct, price: currentPrice };
+      const savedBaseId = item.baseId || item.base?.id;
+      const savedBaseName = item.option || item.base?.name;
+      const base = savedBaseId
+        ? product.bases?.find((option) => option.id === savedBaseId) || product.bases?.find((option) => normalizeText(option.name) === normalizeText(savedBaseName))
+        : savedBaseName
+          ? product.bases?.find((option) => normalizeText(option.name) === normalizeText(savedBaseName))
+          : product.bases?.length === 1 ? product.bases[0] : null;
+      if ((savedBaseId || savedBaseName || product.pairOptions?.length || (product.bases?.length || 0) > 1) && !base) {
+        unavailable.push(`${product.name} (opção indisponível)`);
+        continue;
+      }
+
+      const savedExtras = Array.isArray(item.extras) ? item.extras : [];
+      const extras = savedExtras.map((savedExtra) => {
+        const savedName = typeof savedExtra === 'string' ? savedExtra : savedExtra?.name;
+        return product.extras?.find((extra) => extra.id === savedExtra?.id || normalizeText(extra.name) === normalizeText(savedName));
+      });
+      if (extras.some((extra) => !extra)) {
+        unavailable.push(`${product.name} (adicional indisponível)`);
+        continue;
+      }
+
+      const requiredStock = {};
+      if (product.pairOptions?.length) {
+        const flavorIds = base?.id?.match(/^dupla-(.+)--(.+)$/)?.slice(1) || [];
+        if (flavorIds.length !== 2) {
+          unavailable.push(`${product.name} (opção indisponível)`);
+          continue;
+        }
+        flavorIds.forEach((flavorId) => { requiredStock[flavorId] = (requiredStock[flavorId] || 0) + quantity; });
+      } else if (inventory.flavors?.[product.id]) {
+        requiredStock[product.id] = quantity;
+      }
+      const available = Object.entries(requiredStock).every(([flavorId, count]) => stockAvailability(flavorId, (reservedStock.get(flavorId) || 0) + count));
+      if (!available) {
+        unavailable.push(product.name);
+        continue;
+      }
+
+      Object.entries(requiredStock).forEach(([flavorId, count]) => reservedStock.set(flavorId, (reservedStock.get(flavorId) || 0) + count));
+      addToCart(product, base || null, extras, item.notes || '', quantity, false);
+      addedCount += 1;
+    }
+    return { addedCount, unavailable };
   };
 
   // Alterar quantidade
@@ -166,29 +233,21 @@ export function CartProvider({ children }) {
     );
   }, [items]);
 
-  const isFreeDelivery = subtotal >= settings.freeDeliveryThreshold;
-  const deliveryFee = deliveryType === 'pickup' ? 0 : (isFreeDelivery ? 0 : settings.deliveryFee);
-  const total = subtotal + deliveryFee;
-  const amountToFreeDelivery = Math.max(0, settings.freeDeliveryThreshold - subtotal);
-  const freeDeliveryProgress = Math.min(100, Math.round((subtotal / settings.freeDeliveryThreshold) * 100));
+  const total = subtotal;
 
   return (
     <CartContext.Provider
       value={{
         items,
         addToCart,
-        addedProductName,
+        addOrderToCart,
         updateQuantity,
         removeFromCart,
         clearCart,
         subtotal,
         totalCount,
-        deliveryFee,
         deliveryType,
         setDeliveryType,
-        isFreeDelivery,
-        amountToFreeDelivery,
-        freeDeliveryProgress,
         total,
         isCartOpen,
         setIsCartOpen,

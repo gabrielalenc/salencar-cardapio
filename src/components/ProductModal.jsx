@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { X, Plus, Minus, Check } from 'lucide-react';
 import { useCart } from '../context/CartContext';
 import { formatCurrency } from '../utils/formatters';
+import { ImageLightbox } from './ImageLightbox';
 
 export function ProductModal() {
   const { selectedProduct, closeProductDetails, addToCart, openCart } = useCart();
@@ -11,6 +12,7 @@ export function ProductModal() {
   const [selectedExtras, setSelectedExtras] = useState([]);
   const [notes, setNotes] = useState('');
   const [quantity, setQuantity] = useState(1);
+  const [zoomImage, setZoomImage] = useState('');
 
   useEffect(() => {
     if (selectedProduct) {
@@ -84,11 +86,9 @@ export function ProductModal() {
           
           {/* Imagem do Produto */}
           <div className="relative aspect-[16/10] bg-stone-100 overflow-hidden border-b border-stone-100">
-            <img
-              src={selectedProduct.image}
-              alt={selectedProduct.name}
-              className="w-full h-full object-cover object-center"
-            />
+            <button type="button" onClick={() => setZoomImage(selectedProduct.image)} aria-label={`Ampliar imagem de ${selectedProduct.name}`} className="absolute inset-0 h-full w-full focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-primary">
+              <img src={selectedProduct.image} alt={selectedProduct.name} className={`h-full w-full ${selectedProduct.id === 'combo-2-batidas-alcoolicas' ? 'object-contain p-4' : 'object-cover object-center'}`} />
+            </button>
             {selectedProduct.volume && (
               <span className="absolute bottom-3 left-3 bg-stone-900/80 text-white text-xs font-medium px-2.5 py-1 rounded backdrop-blur-xs">
                 {selectedProduct.volume}
@@ -156,7 +156,7 @@ export function ProductModal() {
                     </p>
                     <div className="mt-2 flex gap-2">
                       {selectedPairOptions.map((option, index) => (
-                        <img key={`${option.id}-${index}`} src={option.image} alt={option.name} className="h-12 w-12 rounded-lg border border-white object-cover shadow-subtle" />
+                        <button key={`${option.id}-${index}`} type="button" onClick={() => setZoomImage(option.image)} aria-label={`Ampliar imagem: ${option.name}`} className="h-14 w-14 overflow-hidden rounded-lg border border-white bg-white shadow-subtle"><img src={option.image} alt={option.name} className="h-full w-full object-contain" /></button>
                       ))}
                     </div>
                   </div>
@@ -318,6 +318,7 @@ export function ProductModal() {
           </button>
         </div>
       </div>
+      <ImageLightbox src={zoomImage} alt={selectedProduct.name} onClose={() => setZoomImage('')} />
     </div>
   );
 }
