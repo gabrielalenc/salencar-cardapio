@@ -9,10 +9,21 @@
   }
   
   body {
+    min-width: 0;
     font-feature-settings: "cv02", "cv03", "cv04", "cv11";
     background: #FFF7ED;
     color: #30252A;
   }
+}
+
+#root {
+  min-width: 0;
+}
+
+img,
+video,
+iframe {
+  max-width: 100%;
 }
 
 /* Custom scrollbar */

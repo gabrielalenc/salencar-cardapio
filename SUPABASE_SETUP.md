@@ -6,12 +6,12 @@ O frontend já usa Supabase Auth e as tabelas protegidas por RLS para sessões, 
 
 1. Crie um projeto no [Supabase](https://supabase.com/dashboard).
 2. Abra **SQL Editor → New query**, cole o conteúdo de `supabase/migrations/20261107000000_customer_accounts_orders.sql` e execute.
-3. Execute também `supabase/migrations/20261107120000_ensure_customer_profile.sql` e `supabase/migrations/20261107130000_admin_access_hardening.sql`, nesta ordem.
-4. Confira em **Table Editor** se foram criadas `profiles`, `addresses`, `customer_preferences`, `orders` e `order_items` e se RLS está ativa.
+3. Execute também, nesta ordem, `supabase/migrations/20261107120000_ensure_customer_profile.sql`, `supabase/migrations/20261107130000_admin_access_hardening.sql`, `supabase/migrations/20261107150000_delivery_quote_flow.sql` e `supabase/migrations/20261110160000_authoritative_catalog_orders.sql`.
+4. Confira em **Table Editor** se foram criadas `profiles`, `addresses`, `customer_preferences`, `catalog_products`, `orders` e `order_items` e se RLS está ativa.
 
 Se a migration base já foi aplicada no projeto, não a execute novamente; aplique apenas as migrations posteriores que ainda não constarem no histórico do Supabase.
 
-A função `create_customer_order` grava o pedido e todos os itens em uma transação. Clientes só leem seus pedidos/endereço/perfil e não podem alterar `profiles.role`; administradores são determinados pelo banco.
+A função `create_customer_order` grava o pedido e todos os itens em uma transação. A migration mais recente cria um catálogo protegido por RLS e recalcula nome, imagem, opção, adicionais e preços no banco; os valores enviados pelo navegador não definem o total salvo. A tabela permite consulta pública dos dados do cardápio e somente administradores podem alterar preços ou ativar/desativar produtos. Clientes só leem seus pedidos/endereço/perfil e não podem alterar `profiles.role`; administradores são determinados pelo banco.
 
 ## 2. Criar a conta administrativa
 
@@ -48,7 +48,9 @@ No painel da Vercel, adicione em **Settings → Environment Variables**:
 - `vite_supabase_url`: Project URL de **Project Settings → API**.
 - `vite_supabase_anon_key`: publishable key (ou anon key legada) de **Project Settings → API**.
 
-Adicione-as aos ambientes Production, Preview e Development conforme necessário e faça novo deploy. O Vite expõe os nomes em minúsculas com o prefixo `vite_supabase_`. Para desenvolvimento local, copie `.env.example` para `.env.local` e preencha os mesmos dois valores. Essas chaves públicas são protegidas por RLS; nunca adicione a `service_role` ao frontend.
+Adicione-as aos ambientes Production, Preview e Development conforme necessário e faça novo deploy. A configuração do Vite embute explicitamente somente essas duas variáveis; não coloque outras variáveis com prefixo `vite_supabase_` esperando que permaneçam privadas. Para desenvolvimento local, copie `.env.example` para `.env.local` e preencha os mesmos dois valores. Essas chaves públicas são protegidas por RLS; nunca adicione a `service_role` ao frontend.
+
+O arquivo `vercel.json` define CSP e cabeçalhos HTTP de segurança para a aplicação. Depois do deploy, verifique no navegador se Supabase, Google Fonts, Google Maps e ViaCEP continuam carregando e se os cabeçalhos estão presentes na resposta de produção.
 
 ## 5. Dados locais antigos
 
@@ -57,3 +59,11 @@ Os dados de exemplo continuam em `localStorage` separados dos dados reais. Conta
 ## 6. Verificação pós-configuração
 
 Depois da configuração, teste confirmação e login por e-mail, OAuth Google, redefinição de senha, persistência após recarregar, perfil e endereço, dois pedidos consecutivos, acompanhamento como cliente e mudança de status como administrador. A implementação pode ser compilada sem credenciais; esses testes de ponta a ponta precisam de um projeto Supabase e credenciais OAuth reais.
+
+Antes de receber pedidos reais, confirme também:
+
+- A migration `20261110160000_authoritative_catalog_orders.sql` foi aplicada. Ela é necessária para o checkout validado pelo servidor; sem a tabela `catalog_products`, o frontend recusa pedidos.
+- Em **Authentication → Rate Limits**, revise os limites de tentativas; mantenha confirmação de e-mail ativa e configure senha mínima de 8 caracteres. A proteção contra senhas vazadas depende do plano Supabase. Ative MFA para as contas de operador do painel Supabase. O login administrativo do site ainda não implementa desafio MFA/AAL2; exigi-lo também no painel Salencar requer completar o fluxo de autenticação do aplicativo.
+- O estoque atual é mantido no `localStorage` do navegador e não é reservado atomicamente pelo banco. Ele não protege contra compras simultâneas ou adulteração pelo cliente; não trate a disponibilidade mostrada na tela como garantia de estoque até implementar inventário autoritativo no servidor.
+- Os dados operacionais do estabelecimento que ainda vêm de `STORE_CONFIG`/armazenamento local devem ser conferidos no navegador que opera a loja. Eles não são uma configuração compartilhada e confiável entre dispositivos.
+- As variáveis e os cabeçalhos configurados em `vercel.json` foram validados localmente, mas precisam ser conferidos na resposta do domínio de produção após o deploy. A configuração real do projeto Vercel não é acessível por este workspace.

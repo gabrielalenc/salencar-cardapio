@@ -1,4 +1,4 @@
-import React, { useState, useMemo, useRef, useEffect, useCallback } from 'react';
+import React, { lazy, Suspense, useState, useMemo, useRef, useEffect, useCallback } from 'react';
 import AOS from 'aos';
 import { CartProvider, useCart } from './context/CartContext';
 import { Header } from './components/Header';
@@ -6,21 +6,22 @@ import { HeroBanner } from './components/HeroBanner';
 import { CategoryNav } from './components/CategoryNav';
 import { ProductCard } from './components/ProductCard';
 import { LocationContactSection } from './components/LocationContactSection';
-import { ProductModal } from './components/ProductModal';
-import { CartDrawer } from './components/CartDrawer';
-import { CheckoutModal } from './components/CheckoutModal';
-import { OrderSuccessModal } from './components/OrderSuccessModal';
+const ProductModal = lazy(() => import('./components/ProductModal').then((module) => ({ default: module.ProductModal })));
+const CartDrawer = lazy(() => import('./components/CartDrawer').then((module) => ({ default: module.CartDrawer })));
+const CheckoutModal = lazy(() => import('./components/CheckoutModal').then((module) => ({ default: module.CheckoutModal })));
+const OrderSuccessModal = lazy(() => import('./components/OrderSuccessModal').then((module) => ({ default: module.OrderSuccessModal })));
 import { MobileFloatingCart } from './components/MobileFloatingCart';
 import { Footer } from './components/Footer';
 import { PRODUCTS, CATEGORIES } from './data/products';
 import { Search, X } from 'lucide-react';
 import { AnimatedText } from './components/AnimatedText';
 import { AuthProvider, useAuth } from './context/AuthContext';
-import { AccountModal } from './components/AccountModal';
-import { AdminPanel } from './components/AdminPanel';
-import { AdminLogin } from './components/AdminLogin';
-import { OrderTrackingModal } from './components/OrderTrackingModal';
-import { NotificationProvider } from './components/Notifications';
+const AccountModal = lazy(() => import('./components/AccountModal').then((module) => ({ default: module.AccountModal })));
+const AdminPanel = lazy(() => import('./components/AdminPanel').then((module) => ({ default: module.AdminPanel })));
+const AdminLogin = lazy(() => import('./components/AdminLogin').then((module) => ({ default: module.AdminLogin })));
+const OrderTrackingModal = lazy(() => import('./components/OrderTrackingModal').then((module) => ({ default: module.OrderTrackingModal })));
+import { NotificationProvider, useNotifications } from './components/Notifications';
+import { createPurchaseIntent, createSelectionIntent, hasVerifiedCustomerSession, PENDING_PURCHASE_KEY, PENDING_SELECTION_KEY, requiresCustomerAccount } from './utils/purchaseAccess';
 
 let aosInitialized = false;
 
@@ -56,8 +57,8 @@ function AdminAccessRoute({ path, navigate }) {
   }, [path, currentUser?.id, currentUser?.role, authLoading, verifyAdminAuthorization, navigate]);
 
   if (authLoading || accessState === 'checking') return <main className="flex min-h-screen items-center justify-center bg-[#fbf8f2] px-4 text-sm font-medium text-stone-500">Verificando acesso seguro…</main>;
-  if (path === '/admin' && accessState === 'authorized') return <AdminPanel onClose={() => navigate('/')} />;
-  return <AdminLogin onBack={() => navigate('/')} onSuccess={() => navigate('/admin')} />;
+  if (path === '/admin' && accessState === 'authorized') return <Suspense fallback={<main className="flex min-h-screen items-center justify-center bg-[#fbf8f2] px-4 text-sm text-stone-500">Carregando painel…</main>}><AdminPanel onClose={() => navigate('/')} /></Suspense>;
+  return <Suspense fallback={<main className="flex min-h-screen items-center justify-center bg-[#fbf8f2] px-4 text-sm text-stone-500">Carregando acesso…</main>}><AdminLogin onBack={() => navigate('/')} onSuccess={() => navigate('/admin')} /></Suspense>;
 }
 
 function DeliveryApp() {
@@ -66,10 +67,12 @@ function DeliveryApp() {
   const [orderSuccessData, setOrderSuccessData] = useState(null);
   const [accountOpen, setAccountOpen] = useState(false);
   const [accountMode, setAccountMode] = useState('login');
+  const [pendingSelection, setPendingSelection] = useState(null);
   const [pathname, setPathname] = useState(() => window.location.pathname.replace(/\/+$/, '') || '/');
   const [trackingOpen, setTrackingOpen] = useState(false);
-  const { openProductDetails, addToCart, openCheckout } = useCart();
-  const { currentUser, productSettings, inventory, stockAvailability, passwordRecoveryPending } = useAuth();
+  const { selectedProduct, isCartOpen, isCheckoutOpen, openProductDetails, closeProductDetails, addToCart, openCart, openCheckout, cartOwnerId } = useCart();
+  const { currentUser, authLoading, productSettings, inventory, stockAvailability, passwordRecoveryPending, verifyCustomerSession } = useAuth();
+  const { notify } = useNotifications();
   const menuSectionRef = useRef(null);
 
   const navigate = useCallback((path, { replace = false } = {}) => {
@@ -108,12 +111,177 @@ function DeliveryApp() {
       } : product.id in inventory.flavors ? { available: stockAvailability(product.id) } : {}),
     })), [productSettings, inventory, stockAvailability]);
 
-  const handleAddToCart = (product) => {
-    if (product.requiresCustomization) {
+  const openProductSelection = useCallback(async (product) => {
+    if (!product.pairOptions?.length) {
       openProductDetails(product);
+      return true;
+    }
+    if (!authLoading) {
+      try {
+        const session = await verifyCustomerSession();
+        if (hasVerifiedCustomerSession(currentUser, session)) {
+          openProductDetails(product);
+          return true;
+        }
+      } catch { /* an invalid or expired session must go through authentication */ }
+    }
+    const intent = createSelectionIntent(product);
+    setPendingSelection(intent);
+    try { sessionStorage.setItem(PENDING_SELECTION_KEY, JSON.stringify(intent)); } catch { /* retain the selection in memory */ }
+    setAccountMode('login');
+    setAccountOpen(true);
+    return false;
+  }, [authLoading, currentUser?.id, currentUser?.role, verifyCustomerSession, openProductDetails]);
+
+  useEffect(() => {
+    if (authLoading) return undefined;
+    let active = true;
+    const resumeSelection = async () => {
+      let intent = pendingSelection;
+      if (!intent) {
+        try {
+          const serialized = sessionStorage.getItem(PENDING_SELECTION_KEY);
+          if (!serialized) return;
+          intent = JSON.parse(serialized);
+          setPendingSelection(intent);
+          return;
+        } catch {
+          try { sessionStorage.removeItem(PENDING_SELECTION_KEY); } catch { /* storage may be disabled */ }
+          return;
+        }
+      }
+      if (currentUser?.role !== 'customer') {
+        setAccountMode('login');
+        setAccountOpen(true);
+        return;
+      }
+      if (typeof intent.productId !== 'string') {
+        setPendingSelection(null);
+        try { sessionStorage.removeItem(PENDING_SELECTION_KEY); } catch { /* storage may be disabled */ }
+        return;
+      }
+      const product = activeProducts.find((item) => item.id === intent.productId);
+      if (!product) {
+        setPendingSelection(null);
+        try { sessionStorage.removeItem(PENDING_SELECTION_KEY); } catch { /* storage may be disabled */ }
+        notify({ type: 'error', title: 'Produto nao encontrado', message: 'Selecione outro produto no cardapio.' });
+        return;
+      }
+      let session;
+      try { session = await verifyCustomerSession(); } catch { session = { ok: false }; }
+      if (!active) return;
+      if (!hasVerifiedCustomerSession(currentUser, session)) {
+        setAccountMode('login');
+        setAccountOpen(true);
+        return;
+      }
+      setPendingSelection(null);
+      try { sessionStorage.removeItem(PENDING_SELECTION_KEY); } catch { /* storage may be disabled */ }
+      setAccountOpen(false);
+      openProductDetails(product);
+    };
+    resumeSelection();
+    return () => { active = false; };
+  }, [authLoading, currentUser?.id, currentUser?.role, pendingSelection, activeProducts, verifyCustomerSession, openProductDetails, notify]);
+
+  useEffect(() => {
+    if (!selectedProduct?.pairOptions?.length || authLoading) return undefined;
+    let active = true;
+    const revalidateOpenSelection = async () => {
+      let session;
+      try { session = await verifyCustomerSession(); } catch { session = { ok: false }; }
+      if (!active || hasVerifiedCustomerSession(currentUser, session)) return;
+      closeProductDetails();
+      const intent = createSelectionIntent(selectedProduct);
+      setPendingSelection(intent);
+      try { sessionStorage.setItem(PENDING_SELECTION_KEY, JSON.stringify(intent)); } catch { /* retain the selection in memory */ }
+      setAccountMode('login');
+      setAccountOpen(true);
+    };
+    revalidateOpenSelection();
+    return () => { active = false; };
+  }, [selectedProduct?.id, selectedProduct?.pairOptions, authLoading, currentUser?.id, currentUser?.role, verifyCustomerSession, closeProductDetails]);
+
+  const cancelAuthenticationFlow = () => {
+    setPendingSelection(null);
+    try {
+      sessionStorage.removeItem(PENDING_SELECTION_KEY);
+      sessionStorage.removeItem(PENDING_PURCHASE_KEY);
+    } catch { /* storage may be disabled */ }
+    setAccountOpen(false);
+  };
+
+  const completePurchase = useCallback((intent) => {
+    if (requiresCustomerAccount(currentUser) || cartOwnerId !== currentUser.id) return false;
+    const product = activeProducts.find((item) => item.id === intent.productId);
+    if (!product || product.available === false) {
+      notify({ type: 'error', title: 'Produto indisponível', message: 'Confira o cardápio e tente novamente.' });
+      return false;
+    }
+    const base = intent.baseId ? product.bases?.find((item) => item.id === intent.baseId) : product.bases?.[0] || null;
+    if (intent.baseId && !base) {
+      notify({ type: 'error', title: 'Opção indisponível', message: 'Selecione novamente as opções do produto.' });
+      return false;
+    }
+    const extras = (intent.extraIds || []).map((id) => product.extras?.find((item) => item.id === id)).filter(Boolean);
+    const quantity = Math.max(1, Number(intent.quantity) || 1);
+    const requiredFlavors = product.pairOptions?.length
+      ? (base?.id?.match(/^dupla-(.+)--(.+)$/)?.slice(1) || []).reduce((counts, id) => {
+        counts.set(id, (counts.get(id) || 0) + quantity);
+        return counts;
+      }, new Map())
+      : product.id in inventory.flavors ? new Map([[product.id, quantity]]) : new Map();
+    if ([...requiredFlavors].some(([id, count]) => !stockAvailability(id, count))) {
+      notify({ type: 'error', title: 'Estoque insuficiente', message: 'Uma das opções escolhidas ficou indisponível. Revise o produto e tente novamente.' });
+      return false;
+    }
+    if (!addToCart(product, base, extras, intent.notes || '', quantity, true)) return false;
+    setAccountOpen(false);
+    if (intent.action === 'checkout') openCheckout();
+    else openCart();
+    return true;
+  }, [currentUser, cartOwnerId, activeProducts, inventory, stockAvailability, addToCart, openCart, openCheckout, notify]);
+
+  const requestPurchase = (product, action = 'cart', base = null, extras = [], notes = '', quantity = 1) => {
+    const intent = createPurchaseIntent(product, action, base, extras, notes, quantity);
+    if (!requiresCustomerAccount(currentUser) && cartOwnerId === currentUser.id) {
+      completePurchase(intent);
       return;
     }
-    addToCart(product, product.bases?.[0] || null);
+    try { sessionStorage.setItem(PENDING_PURCHASE_KEY, JSON.stringify(intent)); } catch {
+      notify({ type: 'error', title: 'Nao foi possÃ­vel continuar', message: 'Ative o armazenamento da sessao e tente novamente.' });
+      return;
+    }
+    setAccountMode('login');
+    setAccountOpen(true);
+  };
+
+  useEffect(() => {
+    if (authLoading || currentUser?.role !== 'customer' || cartOwnerId !== currentUser.id) return;
+    let intent;
+    try {
+      const serialized = sessionStorage.getItem(PENDING_PURCHASE_KEY);
+      if (!serialized) return;
+      intent = JSON.parse(serialized);
+      sessionStorage.removeItem(PENDING_PURCHASE_KEY);
+    } catch {
+      sessionStorage.removeItem(PENDING_PURCHASE_KEY);
+      notify({ type: 'error', title: 'Nao foi possÃ­vel recuperar o produto', message: 'Selecione o produto novamente.' });
+      return;
+    }
+    if (!intent || typeof intent.productId !== 'string') {
+      notify({ type: 'error', title: 'Produto nao recuperado', message: 'Selecione o produto novamente.' });
+      return;
+    }
+    completePurchase(intent);
+  }, [authLoading, currentUser?.id, currentUser?.role, cartOwnerId, completePurchase, notify]);
+
+  const handleAddToCart = (product) => {
+    if (product.requiresCustomization) {
+      openProductSelection(product);
+      return;
+    }
+    requestPurchase(product, 'cart', product.bases?.[0] || null);
   };
 
   const scrollToMenu = () => {
@@ -262,15 +430,14 @@ function DeliveryApp() {
                   key={product.id}
                   product={product}
                   animationDelay={(index % 4) * 50}
-                  onSelect={openProductDetails}
+                  onSelect={openProductSelection}
                   onAddToCart={handleAddToCart}
                   onBuyNow={(item) => {
                     if (item.requiresCustomization) {
-                      openProductDetails(item);
+                      openProductSelection(item);
                       return;
                     }
-                    addToCart(item, item.bases?.[0] || null, [], '', 1, false);
-                    openCheckout();
+                    requestPurchase(item, 'checkout', item.bases?.[0] || null);
                   }}
                 />
               ))}
@@ -286,19 +453,16 @@ function DeliveryApp() {
       <Footer onOpenTracking={() => setTrackingOpen(true)} onOpenAdminPanel={() => navigate('/admin')} />
 
       {/* Modais e Drawers Funcionais */}
-      <ProductModal />
-      <CartDrawer />
-      <CheckoutModal onOrderSuccess={(data) => setOrderSuccessData(data)} onRequestAuth={(mode) => { setAccountMode(mode); setAccountOpen(true); }} />
-      <OrderSuccessModal
-        orderData={orderSuccessData}
-        onClose={() => setOrderSuccessData(null)}
-      />
+      {selectedProduct && <Suspense fallback={null}><ProductModal onAddToCart={(product, base, extras, notes, quantity) => requestPurchase(product, 'cart', base, extras, notes, quantity)} /></Suspense>}
+      {isCartOpen && <Suspense fallback={null}><CartDrawer /></Suspense>}
+      {isCheckoutOpen && <Suspense fallback={null}><CheckoutModal onOrderSuccess={(data) => setOrderSuccessData(data)} onRequestAuth={(mode) => { setAccountMode(mode); setAccountOpen(true); }} /></Suspense>}
+      {orderSuccessData && <Suspense fallback={null}><OrderSuccessModal orderData={orderSuccessData} onClose={() => setOrderSuccessData(null)} /></Suspense>}
 
       {/* Barra de Sacola Flutuante para Celular */}
       <MobileFloatingCart />
 
-      <AccountModal isOpen={accountOpen} initialMode={accountMode} onClose={() => setAccountOpen(false)} onOpenAdminPanel={() => { setAccountOpen(false); navigate('/admin'); }} />
-      <OrderTrackingModal isOpen={trackingOpen} onClose={() => setTrackingOpen(false)} />
+      {accountOpen && <Suspense fallback={null}><AccountModal isOpen={accountOpen} initialMode={accountMode} onClose={() => setAccountOpen(false)} onDismiss={cancelAuthenticationFlow} onOpenAdminPanel={() => { setAccountOpen(false); navigate('/admin'); }} /></Suspense>}
+      {trackingOpen && <Suspense fallback={null}><OrderTrackingModal isOpen={trackingOpen} onClose={() => setTrackingOpen(false)} /></Suspense>}
 
     </div>
   );

@@ -200,7 +200,7 @@ export function CheckoutModal({ onOrderSuccess, onRequestAuth }) {
           productImage: item.product.image,
           baseId: item.base?.id || '',
           option: item.base?.name || '',
-          extras: (item.extras || []).map((extra) => extra.name),
+          extras: (item.extras || []).map((extra) => ({ id: extra.id, name: extra.name, price: extra.price })),
           quantity: item.quantity,
           unitPrice: item.unitPrice,
           totalPrice: item.totalPrice,
@@ -230,7 +230,7 @@ export function CheckoutModal({ onOrderSuccess, onRequestAuth }) {
       whatsappWindow?.close();
       setOrderError(err.message || 'Não foi possível registrar o pedido.');
       notify({ type: 'error', title: 'Não foi possível registrar o pedido', message: err.message || 'Revise os dados e tente novamente.' });
-      console.error('Erro ao finalizar pedido:', err);
+      console.error('Erro ao finalizar pedido:', err?.code || err?.name || 'erro');
     } finally {
       setIsSubmitting(false);
     }

@@ -6,7 +6,6 @@ import { getSupabaseConfigError, isSupabaseConfigured, supabase } from '../lib/s
 const AuthContext = createContext(null);
 const KEYS = {
   session: 'salencar_demo_session_v1',
-  products: 'salencar_admin_products_v1',
   settings: 'salencar_admin_settings_v1',
   inventory: 'salencar_inventory_v1',
 };
@@ -121,12 +120,24 @@ export function AuthProvider({ children }) {
   const [orders, setOrders] = useState([]);
   const [ordersLoading, setOrdersLoading] = useState(false);
   const [ordersError, setOrdersError] = useState('');
-  const [productSettings, setProductSettings] = useState(() => readStorage(KEYS.products, {}) || {});
+  const [productSettings, setProductSettings] = useState({});
   const [inventory, setInventory] = useState(() => createInventory(readStorage(KEYS.inventory, {})));
   const [settings, setSettings] = useState(readStoreSettings);
   useEffect(() => { try { localStorage.removeItem(KEYS.session); } catch { /* localStorage não é necessário para autenticação */ } }, []);
   useEffect(() => { try { localStorage.removeItem('salencar_demo_orders_v1'); } catch { /* remove pedidos fictícios antigos sem tocar nos pedidos do Supabase */ } }, []);
-  useEffect(() => writeStorage(KEYS.products, productSettings), [productSettings]);
+  useEffect(() => {
+    if (!supabase) return undefined;
+    let active = true;
+    supabase.from('catalog_products').select('product_id,price,active').then(({ data, error }) => {
+      if (!active) return;
+      if (error) {
+        console.error('Não foi possível carregar o catálogo seguro:', error.code || error.name || 'erro');
+        return;
+      }
+      setProductSettings(Object.fromEntries((data || []).map((product) => [product.product_id, { price: Number(product.price), active: product.active }])));
+    });
+    return () => { active = false; };
+  }, []);
   useEffect(() => writeStorage(KEYS.inventory, inventory), [inventory]);
   useEffect(() => {
     const publicSettings = Object.fromEntries(Object.entries(settings).filter(([key]) => !['deliveryFee', 'freeDeliveryThreshold', 'estimatedDeliveryTime', 'minimumOrder'].includes(key)));
@@ -187,13 +198,13 @@ export function AuthProvider({ children }) {
     supabase.auth.getSession().then(async ({ data, error }) => {
       if (error) throw error;
       if (data.session && active) await loadAccountData(data.session.user);
-    }).catch((error) => console.error('Falha ao recuperar sessão/perfil Supabase:', error)).finally(() => { if (active) setAuthLoading(false); });
+    }).catch((error) => console.error('Falha ao recuperar sessão/perfil Supabase:', error?.code || error?.name || 'erro')).finally(() => { if (active) setAuthLoading(false); });
     const { data: listener } = supabase.auth.onAuthStateChange((event, session) => {
       if (!active) return;
       if (event === 'PASSWORD_RECOVERY') setPasswordRecoveryPending(true);
       if (!session) { setCurrentUser(null); setAddresses([]); setOrders([]); setOrdersLoading(false); setOrdersError(''); setUsers([]); setPasswordRecoveryPending(false); setAuthLoading(false); return; }
       setAuthLoading(true);
-      window.setTimeout(() => loadAccountData(session.user).catch((error) => console.error(`Falha ao processar autenticação Supabase (${event}):`, error)).finally(() => { if (active) setAuthLoading(false); }), 0);
+      window.setTimeout(() => loadAccountData(session.user).catch((error) => console.error(`Falha ao processar autenticação Supabase (${event}):`, error?.code || error?.name || 'erro')).finally(() => { if (active) setAuthLoading(false); }), 0);
     });
     return () => { active = false; listener.subscription.unsubscribe(); };
   }, [loadAccountData]);
@@ -216,6 +227,11 @@ export function AuthProvider({ children }) {
     if (error) return { ok: false, error: error.message };
     return { ok: data === true };
   }, []);
+  const verifyCustomerSession = useCallback(async () => {
+    if (!supabase || currentUser?.role !== 'customer') return { ok: false };
+    const { data, error } = await supabase.auth.getUser();
+    return { ok: !error && data.user?.id === currentUser.id, userId: data.user?.id || null };
+  }, [currentUser]);
   const loginAdmin = useCallback(async (email, password) => {
     const result = await login(email, password);
     if (!result.ok) {
@@ -248,7 +264,7 @@ export function AuthProvider({ children }) {
   }, []);
   const changeCustomerPassword = useCallback(async (_current, next) => {
     if (!currentUser || currentUser.role !== 'customer') return { ok: false, error: 'Entre na sua conta para alterar a senha.' };
-    if (String(next || '').length < 6) return { ok: false, error: 'A nova senha deve ter pelo menos 6 caracteres.' };
+    if (String(next || '').length < 8) return { ok: false, error: 'A nova senha deve ter pelo menos 8 caracteres.' };
     const { error } = await supabase.auth.updateUser({ password: next });
     if (!error) setPasswordRecoveryPending(false);
     return error ? { ok: false, error: error.message } : { ok: true };
@@ -295,6 +311,9 @@ export function AuthProvider({ children }) {
 
   const recordOrder = useCallback(async (order) => {
     if (!currentUser || currentUser.role !== 'customer') return { ok: false, error: 'Entre em uma conta de cliente para registrar o pedido.' };
+    if (!supabase) return { ok: false, error: getSupabaseConfigError() };
+    const { data: catalog, error: catalogError } = await supabase.from('catalog_products').select('product_id').limit(1);
+    if (catalogError || !catalog?.length) return { ok: false, error: 'O catálogo seguro ainda não está configurado no Supabase. Aplique as migrations atuais antes de receber pedidos.' };
     const paymentId = order.paymentMethodId || ({ Pix: 'pix', Dinheiro: 'money', 'Cartão de crédito': 'credit', 'Cartão de débito': 'debit' })[order.paymentMethod];
     const profileResult = await updateCustomerProfile({ name: order.customerName || currentUser.name, phone: order.phone });
     if (!profileResult.ok) return profileResult;
@@ -308,7 +327,7 @@ export function AuthProvider({ children }) {
       p_order: { customer_name: order.customerName || currentUser.name, phone: order.phone, subtotal: order.subtotal, delivery_fee: order.deliveryFee, total: order.total, delivery_type: order.deliveryType, address_snapshot: order.addressSnapshot || {}, payment_method: paymentId, order_notes: order.orderNotes || '' },
       p_items: order.items.map((item) => ({ product_id: item.productId, product_name: item.productName, product_image: item.productImage || '', base_id: item.baseId || '', option: item.option || '', extras: item.extras || [], quantity: item.quantity, unit_price: item.unitPrice, total_price: item.totalPrice })),
     });
-    if (error) return { ok: false, error: error.message };
+    if (error) return { ok: false, error: error.code === 'P0001' ? error.message : 'Não foi possível registrar o pedido agora. Verifique os dados e tente novamente.' };
     const savedOrder = { ...order, id: data.order_number, databaseId: data.id, customerId: currentUser.id, customerName: order.customerName || currentUser.name, customerEmail: currentUser.email, createdAt: data.created_at, status: data.status, address: formatAddress(order.addressSnapshot), addressSnapshot: order.addressSnapshot || {}, paymentMethodId: paymentId };
     setOrders((previous) => dedupeOrders([savedOrder, ...previous]));
     return { ok: true, order: savedOrder };
@@ -362,9 +381,26 @@ export function AuthProvider({ children }) {
     const unavailable = Object.entries(needs).find(([flavorId, count]) => !stockAvailability(flavorId, count));
     return unavailable ? { ok: false, error: `Estoque insuficiente ou sabor indisponível: ${STOCK_FLAVORS.find((flavor) => flavor.id === unavailable[0])?.name || unavailable[0]}.` } : { ok: true };
   }, [stockAvailability]);
-  const updateProductSetting = useCallback((productId, changes) => setProductSettings((previous) => ({ ...previous, [productId]: { ...previous[productId], ...changes } })), []);
+  const updateProductSetting = useCallback(async (productId, changes) => {
+    if (currentUser?.role !== 'admin' || !supabase) return { ok: false, error: 'Somente um administrador pode alterar o catálogo.' };
+    const update = {};
+    if (changes.price !== undefined) {
+      const price = Number(changes.price);
+      if (!Number.isFinite(price) || price < 0 || price > 100000) return { ok: false, error: 'Informe um preço válido.' };
+      update.price = price;
+    }
+    if (changes.active !== undefined) {
+      if (typeof changes.active !== 'boolean') return { ok: false, error: 'O status do produto é inválido.' };
+      update.active = changes.active;
+    }
+    if (!Object.keys(update).length) return { ok: true };
+    const { data, error } = await supabase.from('catalog_products').update(update).eq('product_id', productId).select('product_id,price,active').maybeSingle();
+    if (error || !data) return { ok: false, error: error?.message || 'Produto não encontrado no catálogo.' };
+    setProductSettings((previous) => ({ ...previous, [data.product_id]: { price: Number(data.price), active: data.active } }));
+    return { ok: true };
+  }, [currentUser?.role]);
   const updateStoreSettings = useCallback((changes) => setSettings((previous) => ({ ...previous, ...changes, pix: changes.pix ? { ...previous.pix, ...changes.pix } : previous.pix, status: changes.status ? { ...previous.status, ...changes.status } : previous.status })), []);
-  const value = useMemo(() => ({ users, currentUser, authLoading, passwordRecoveryPending, addresses, paymentPreference, orders, ordersLoading, ordersError, refreshOrders, productSettings, settings, inventory, login, loginAdmin, verifyAdminAuthorization, register, loginWithGoogle, resetPassword, logout, recordOrder, updateOrderStatus, saveDeliveryQuote, respondToDeliveryQuote, updateProductSetting, updateStoreSettings, updateInventorySettings, updateFlavorStock, stockAvailability, canFulfillItems, updateCustomerProfile, changeCustomerPassword, saveAddress, deleteAddress, savePaymentPreference }), [users, currentUser, authLoading, passwordRecoveryPending, addresses, paymentPreference, orders, ordersLoading, ordersError, refreshOrders, productSettings, settings, inventory, login, loginAdmin, verifyAdminAuthorization, register, loginWithGoogle, resetPassword, logout, recordOrder, updateOrderStatus, saveDeliveryQuote, respondToDeliveryQuote, updateProductSetting, updateStoreSettings, updateInventorySettings, updateFlavorStock, stockAvailability, canFulfillItems, updateCustomerProfile, changeCustomerPassword, saveAddress, deleteAddress, savePaymentPreference]);
+  const value = useMemo(() => ({ users, currentUser, authLoading, passwordRecoveryPending, addresses, paymentPreference, orders, ordersLoading, ordersError, refreshOrders, productSettings, settings, inventory, login, loginAdmin, verifyAdminAuthorization, verifyCustomerSession, register, loginWithGoogle, resetPassword, logout, recordOrder, updateOrderStatus, saveDeliveryQuote, respondToDeliveryQuote, updateProductSetting, updateStoreSettings, updateInventorySettings, updateFlavorStock, stockAvailability, canFulfillItems, updateCustomerProfile, changeCustomerPassword, saveAddress, deleteAddress, savePaymentPreference }), [users, currentUser, authLoading, passwordRecoveryPending, addresses, paymentPreference, orders, ordersLoading, ordersError, refreshOrders, productSettings, settings, inventory, login, loginAdmin, verifyAdminAuthorization, verifyCustomerSession, register, loginWithGoogle, resetPassword, logout, recordOrder, updateOrderStatus, saveDeliveryQuote, respondToDeliveryQuote, updateProductSetting, updateStoreSettings, updateInventorySettings, updateFlavorStock, stockAvailability, canFulfillItems, updateCustomerProfile, changeCustomerPassword, saveAddress, deleteAddress, savePaymentPreference]);
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;
 }
 

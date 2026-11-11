@@ -34,7 +34,7 @@ test('cancelled and completed orders are kept out of the active list', () => {
 });
 
 test('customer status labels match the shared order statuses', () => {
-  assert.equal(customerOrderStatus('confirmed'), 'Pedido recebido');
+  assert.equal(customerOrderStatus('confirmed'), 'Pedido confirmado');
   assert.equal(customerOrderStatus('out_for_delivery'), 'Saiu para entrega');
   assert.equal(customerOrderStatus('cancelled'), 'Cancelado');
 });

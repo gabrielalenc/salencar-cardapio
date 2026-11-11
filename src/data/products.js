@@ -77,7 +77,7 @@ export const PRODUCTS = [
     category: "combos",
     price: 25,
     volume: "2 x 300 ml",
-    image: "/images/batida-maracuja.jpg",
+    image: "/images/header-batidas.png",
     tag: "2 por R$ 25,00",
     description: "Monte sua dupla com duas batidas alcoólicas. Combine morango, maracujá ou limão, tradicionais ou com creme de avelã.",
     ingredients: "Duas batidas alcoólicas à escolha: morango, maracujá ou limão, com ou sem creme de avelã.",

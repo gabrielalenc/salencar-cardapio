@@ -18,7 +18,7 @@ export function ProductCard({ product, onSelect, onAddToCart, onBuyNow, animatio
       data-aos-delay={animationDelay}
       className="product-card bg-white rounded-2xl p-3 sm:p-3.5 border border-stone-200/80 hover:border-primary/40 shadow-subtle hover:shadow-card flex flex-col justify-between cursor-pointer group"
     >
-      <div className={`relative w-full aspect-[4/3] rounded-xl overflow-hidden border border-stone-100 ${isDoubleCombo ? 'bg-surface-50' : 'bg-stone-100'}`}>
+      <div className={`relative w-full ${isDoubleCombo ? 'aspect-[16/10]' : 'aspect-[4/3]'} rounded-xl overflow-hidden border border-stone-100 ${isDoubleCombo ? 'bg-surface-50' : 'bg-stone-100'}`}>
         <button type="button" onClick={(event) => { event.stopPropagation(); setImageZoomOpen(true); }} aria-label={`Ampliar imagem de ${product.name}`} className="absolute inset-0 flex h-full w-full items-center justify-center focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-primary">
           {!imageError ? <img
             src={product.image}
@@ -27,7 +27,7 @@ export function ProductCard({ product, onSelect, onAddToCart, onBuyNow, animatio
             decoding="async"
             onLoad={() => setImageLoaded(true)}
             onError={() => setImageError(true)}
-            className={`h-full w-full transition-transform duration-300 ease-out group-hover:scale-[1.03] ${isDoubleCombo ? 'object-contain p-2 sm:p-3' : 'object-cover object-center'}`}
+            className={`h-full w-full transition-transform duration-300 ease-out ${isDoubleCombo ? 'object-contain' : 'object-cover object-center group-hover:scale-[1.03]'}`}
           /> : <span className="px-4 text-xs text-stone-500">Imagem indisponível</span>}
           <span className="absolute bottom-2 left-2 inline-flex items-center gap-1 rounded-lg bg-white/90 px-2 py-1 text-[10px] font-semibold text-stone-700 opacity-0 shadow-subtle transition group-hover:opacity-100 focus-visible:opacity-100"><ZoomIn className="h-3 w-3" />Ampliar</span>
         </button>

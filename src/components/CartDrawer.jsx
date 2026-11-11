@@ -37,8 +37,8 @@ export function CartDrawer() {
         className="absolute inset-0 bg-stone-900/50 backdrop-blur-xs transition-opacity duration-200"
       />
 
-      <div className="fixed inset-y-0 right-0 max-w-full flex pl-10">
-        <div className="w-screen max-w-md bg-white shadow-elevated flex flex-col">
+      <div className="fixed inset-y-0 right-0 flex w-full max-w-md">
+        <div className="flex min-w-0 w-full flex-col bg-white shadow-elevated">
           
           {/* Header */}
           <div className="p-4 sm:p-5 border-b border-stone-200 flex items-center justify-between">

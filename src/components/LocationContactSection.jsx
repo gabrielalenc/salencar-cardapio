@@ -21,7 +21,7 @@ export function LocationContactSection() {
   }, [streetViewLoaded]);
 
   return (
-    <section id="localizacao" className="border-t border-stone-200/80 bg-surface-50 py-12 sm:py-16">
+    <section id="localizacao" className="overflow-x-clip border-t border-stone-200/80 bg-surface-50 py-12 sm:py-16">
       <div className="mx-auto max-w-7xl px-4 sm:px-6">
         <div className="mx-auto mb-8 max-w-xl text-center sm:mb-10">
           <span className="mb-1 block text-xs font-black uppercase tracking-widest text-primary">Localização</span>
