@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useEffect } from 'react';
 import { X, Trash2, Plus, Minus, ShoppingBag, ArrowRight } from 'lucide-react';
 import { useCart } from '../context/CartContext';
 import { formatCurrency } from '../utils/formatters';
@@ -27,25 +27,34 @@ export function CartDrawer() {
     if (accepted) clearCart();
   };
 
+  useEffect(() => {
+    if (!isCartOpen) return undefined;
+    const handleKeyDown = (event) => {
+      if (event.key === 'Escape') closeCart();
+    };
+    document.addEventListener('keydown', handleKeyDown);
+    return () => document.removeEventListener('keydown', handleKeyDown);
+  }, [isCartOpen, closeCart]);
+
   if (!isCartOpen) return null;
 
   return (
-    <div className="fixed inset-0 z-50 overflow-hidden">
+    <div className="fixed inset-0 z-50 overflow-hidden" role="dialog" aria-modal="true" aria-labelledby="cart-drawer-title">
       {/* Backdrop */}
       <div
         onClick={closeCart}
-        className="absolute inset-0 bg-stone-900/50 backdrop-blur-xs transition-opacity duration-200"
+        className="absolute inset-0 bg-stone-950/45 backdrop-blur-sm transition-opacity duration-200"
       />
 
-      <div className="fixed inset-y-0 right-0 flex w-full max-w-md">
-        <div className="flex min-w-0 w-full flex-col bg-white shadow-elevated">
+      <div className="absolute inset-y-0 right-0 z-10 flex w-[90vw] sm:w-[80vw]">
+        <div className="flex min-w-0 w-full flex-col border-l border-white/60 bg-white shadow-[-18px_0_48px_rgba(36,28,32,0.18)]">
           
           {/* Header */}
-          <div className="p-4 sm:p-5 border-b border-stone-200 flex items-center justify-between">
+          <div className="flex items-center justify-between border-b border-stone-200 bg-gradient-to-r from-white to-surface-50 p-4 sm:p-5">
             <div className="flex items-center gap-2.5">
               <ShoppingBag className="w-5 h-5 text-primary" />
               <div>
-                <h2 className="font-display font-bold text-base sm:text-lg text-stone-900 leading-tight">
+                <h2 id="cart-drawer-title" className="font-display font-bold text-base sm:text-lg text-stone-900 leading-tight">
                   Seu Carrinho
                 </h2>
                 <span className="text-xs text-stone-500 font-medium">
@@ -55,8 +64,9 @@ export function CartDrawer() {
             </div>
 
             <button
+              type="button"
               onClick={closeCart}
-              className="p-1.5 rounded-lg hover:bg-stone-100 text-stone-400 hover:text-stone-700 transition-colors"
+              className="flex h-10 w-10 items-center justify-center rounded-xl border border-stone-200 bg-white text-stone-600 shadow-subtle transition-colors hover:border-primary/20 hover:bg-primary-light hover:text-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/40"
               aria-label="Fechar carrinho"
             >
               <X className="w-5 h-5" />

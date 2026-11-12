@@ -20,6 +20,47 @@
   min-width: 0;
 }
 
+.startup-splash {
+  position: fixed;
+  inset: 0;
+  z-index: 10000;
+  display: grid;
+  place-items: center;
+  overflow: hidden;
+  padding: 24px;
+  background: #fff;
+  color: #30252a;
+  opacity: 1;
+  transition: opacity 420ms ease;
+}
+.startup-splash--exiting { opacity: 0; pointer-events: none; }
+.startup-splash__content { display: flex; width: min(100%, 340px); flex-direction: column; align-items: center; text-align: center; }
+.startup-splash__logo { display: block; width: clamp(148px, 28vw, 196px); height: auto; aspect-ratio: 1; object-fit: contain; animation: startup-logo-enter 700ms cubic-bezier(.2,.7,.25,1) both; }
+.startup-splash__message { margin: 22px 0 0; color: #6d5b52; font: 400 13px/1.5 "Plus Jakarta Sans", system-ui, sans-serif; letter-spacing: .01em; }
+.startup-splash__progress { position: relative; display: block; width: 116px; height: 2px; margin-top: 20px; overflow: hidden; border-radius: 999px; background: #eee9e7; }
+.startup-splash__progress span { position: absolute; inset: 0 auto 0 -42%; width: 40%; border-radius: inherit; background: #70283f; animation: startup-progress 1.5s ease-in-out infinite; }
+.startup-splash__error { max-width: 320px; margin: 22px 0 0; color: #6d5b52; font: 400 13px/1.6 "Plus Jakarta Sans", system-ui, sans-serif; }
+.startup-splash__actions { display: flex; flex-wrap: wrap; justify-content: center; gap: 10px; margin-top: 18px; }
+.startup-splash__button { min-height: 44px; padding: 10px 16px; border: 1px solid #e7d9cc; border-radius: 10px; background: #fff; color: #51413c; font: 600 13px "Plus Jakarta Sans", system-ui, sans-serif; cursor: pointer; }
+.startup-splash__button--primary { border-color: #70283f; background: #70283f; color: #fff; }
+@keyframes startup-logo-enter { from { opacity: 0; transform: scale(.97); } to { opacity: 1; transform: scale(1); } }
+@keyframes startup-progress { from { transform: translateX(0); } to { transform: translateX(360%); } }
+@media (max-width: 640px) {
+  .startup-splash { padding: 20px; }
+  .startup-splash__logo { width: clamp(144px, 42vw, 176px); }
+  .startup-splash__message { margin-top: 20px; font-size: 12px; }
+  .startup-splash__progress { margin-top: 18px; }
+}
+@media (max-height: 560px) {
+  .startup-splash__logo { width: min(34vh, 160px); }
+  .startup-splash__message { margin-top: 14px; }
+  .startup-splash__progress { margin-top: 14px; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .startup-splash, .startup-splash__logo { transition: none; animation: none; }
+  .startup-splash__progress span { left: 30%; width: 40%; animation: none; }
+}
+
 img,
 video,
 iframe {

@@ -15,13 +15,18 @@ export function AdminLogin({ onBack, onSuccess }) {
     if (busy) return;
     setBusy(true);
     setError('');
-    const result = await loginAdmin(email, password);
-    if (!result.ok) {
-      setError(result.error);
+    try {
+      const result = await loginAdmin(email, password);
+      if (!result.ok) {
+        setError(result.error || 'Não foi possível entrar no painel. Tente novamente.');
+        return;
+      }
+      onSuccess();
+    } catch (cause) {
+      setError(cause?.message || 'Não foi possível concluir a autenticação. Verifique a conexão e tente novamente.');
+    } finally {
       setBusy(false);
-      return;
     }
-    onSuccess();
   };
 
   return (

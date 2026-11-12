@@ -1,15 +1,41 @@
 import React, { useEffect, useRef, useState } from 'react';
-import { LogIn, LogOut, ShieldCheck, ShoppingBag, UserRound } from 'lucide-react';
+import { ChevronDown, LogIn, LogOut, Mail, ShieldCheck, ShoppingBag, UserRound } from 'lucide-react';
 import { useCart } from '../context/CartContext';
 import { useAuth } from '../context/AuthContext';
 import { useNotifications } from './Notifications';
 
-export function Header({ onOpenAccount, onOpenTracking, onOpenAdminPanel }) {
+function ProfileAvatar({ user, className = 'h-9 w-9' }) {
+  const [imageFailed, setImageFailed] = useState(false);
+  const avatarUrl = user?.avatarUrl || '';
+  useEffect(() => setImageFailed(false), [avatarUrl]);
+  if (avatarUrl && !imageFailed) return <img src={avatarUrl} alt="" aria-hidden="true" referrerPolicy="no-referrer" onError={() => setImageFailed(true)} className={`${className} shrink-0 rounded-full border border-primary/20 bg-primary-light object-cover object-[50%_40%] shadow-sm`} />;
+  const initial = user?.name?.trim()?.charAt(0)?.toLocaleUpperCase('pt-BR');
+  return <span aria-hidden="true" className={`${className} flex shrink-0 items-center justify-center rounded-full border border-primary/20 bg-gradient-to-br from-primary-light to-surface-100 font-semibold text-primary shadow-sm`}>{initial || <UserRound className="h-4 w-4" />}</span>;
+}
+
+function AccountMenuPanel({ user, onOpenAccount, onOpenOrders, onLogout, mobile = false }) {
+  return (
+    <div role="menu" className={mobile ? 'mt-2 space-y-1 rounded-xl border border-stone-200 bg-white p-2 shadow-subtle' : 'absolute right-0 top-full z-50 mt-2 w-64 rounded-2xl border border-stone-200 bg-white p-2.5 shadow-elevated'}>
+      <div className="border-b border-stone-100 px-3 py-2.5">
+        <p className="truncate text-sm font-semibold text-stone-900">{user.name || 'Conta do cliente'}</p>
+        {user.email && <p className="mt-1 flex min-w-0 items-center gap-1.5 truncate text-xs text-stone-500"><Mail className="h-3.5 w-3.5 shrink-0" />{user.email}</p>}
+      </div>
+      <button role="menuitem" type="button" onClick={onOpenAccount} className="flex min-h-10 w-full items-center gap-2.5 rounded-lg px-3 text-left text-xs font-semibold text-stone-700 transition hover:bg-stone-50 hover:text-primary"><UserRound className="h-4 w-4 text-primary" />Minha conta</button>
+      <button role="menuitem" type="button" onClick={onOpenOrders} className="flex min-h-10 w-full items-center gap-2.5 rounded-lg px-3 text-left text-xs font-semibold text-stone-700 transition hover:bg-stone-50 hover:text-primary"><ShoppingBag className="h-4 w-4 text-primary" />Meus pedidos</button>
+      <button role="menuitem" type="button" onClick={onLogout} className="flex min-h-10 w-full items-center gap-2.5 rounded-lg px-3 text-left text-xs font-semibold text-stone-600 transition hover:bg-rose-50 hover:text-rose-700"><LogOut className="h-4 w-4" />Sair da conta</button>
+    </div>
+  );
+}
+
+export function Header({ onOpenAccount, onOpenOrders, onOpenTracking, onOpenAdminPanel }) {
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
+  const [accountMenuOpen, setAccountMenuOpen] = useState(false);
   const mobileMenuRegionRef = useRef(null);
   const mobileMenuButtonRef = useRef(null);
+  const desktopAccountMenuRef = useRef(null);
+  const mobileAccountMenuRef = useRef(null);
   const { totalCount, openCart } = useCart();
-  const { currentUser, settings, logout } = useAuth();
+  const { currentUser, authLoading, settings, logout } = useAuth();
   const { confirm, notify } = useNotifications();
 
   useEffect(() => {
@@ -33,10 +59,27 @@ export function Header({ onOpenAccount, onOpenTracking, onOpenAdminPanel }) {
     };
   }, [mobileMenuOpen]);
 
+  useEffect(() => {
+    if (!accountMenuOpen) return undefined;
+    const handleOutsidePointer = (event) => {
+      if (!desktopAccountMenuRef.current?.contains(event.target) && !mobileAccountMenuRef.current?.contains(event.target)) setAccountMenuOpen(false);
+    };
+    const handleEscape = (event) => {
+      if (event.key === 'Escape') setAccountMenuOpen(false);
+    };
+    document.addEventListener('pointerdown', handleOutsidePointer);
+    document.addEventListener('keydown', handleEscape);
+    return () => {
+      document.removeEventListener('pointerdown', handleOutsidePointer);
+      document.removeEventListener('keydown', handleEscape);
+    };
+  }, [accountMenuOpen]);
+
   const closeMobileMenu = () => setMobileMenuOpen(false);
   const confirmLogout = async () => {
     const accepted = await confirm({ title: 'Sair da sua conta?', message: 'Você precisará entrar novamente para acompanhar seus pedidos.', confirmLabel: 'Sair', destructive: true });
     if (accepted) {
+      setAccountMenuOpen(false);
       const result = await logout();
       if (!result.ok) notify({ type: 'error', title: 'Não foi possível sair', message: result.error });
     }
@@ -44,11 +87,22 @@ export function Header({ onOpenAccount, onOpenTracking, onOpenAdminPanel }) {
   };
   const openAccount = () => {
     closeMobileMenu();
+    setAccountMenuOpen(false);
+    if (authLoading) return;
+    if (currentUser?.role === 'admin') {
+      onOpenAdminPanel?.();
+      return;
+    }
     onOpenAccount?.();
   };
   const openTracking = () => {
     closeMobileMenu();
     onOpenTracking?.();
+  };
+  const openOrders = () => {
+    closeMobileMenu();
+    setAccountMenuOpen(false);
+    onOpenOrders?.();
   };
   const openAdminPanel = () => {
     closeMobileMenu();
@@ -84,12 +138,12 @@ export function Header({ onOpenAccount, onOpenTracking, onOpenAdminPanel }) {
         </nav>
 
         <div className="flex shrink-0 items-center gap-1.5 sm:gap-2 lg:border-l lg:border-stone-200 lg:pl-4 xl:gap-3">
-          {currentUser?.role === 'customer' ? <div className="flex min-w-0 items-center gap-0.5">
-            <button type="button" onClick={onOpenAccount} className="inline-flex min-w-0 max-w-[105px] items-center gap-1 rounded-xl px-1.5 py-2 text-[11px] font-semibold text-stone-600 transition hover:bg-stone-50 hover:text-primary sm:max-w-48 sm:gap-1.5 sm:px-2 sm:text-xs lg:max-w-36 xl:max-w-48" aria-label="Abrir opções da conta">
-              <UserRound className="h-4 w-4 shrink-0" /><span className="truncate">Olá, {currentUser.name}</span>
+          {authLoading ? <button type="button" disabled className="inline-flex items-center gap-2 rounded-xl px-3 py-2 text-xs font-semibold text-stone-400" aria-label="Verificando sessão"><span className="h-4 w-4 animate-spin rounded-full border-2 border-stone-200 border-t-primary" />Verificando</button> : currentUser?.role === 'customer' ? <div ref={desktopAccountMenuRef} className="relative">
+            <button type="button" onClick={() => setAccountMenuOpen((open) => !open)} aria-expanded={accountMenuOpen} aria-haspopup="menu" aria-label="Abrir menu da conta" className="inline-flex min-h-11 max-w-52 items-center gap-2 rounded-xl px-2 py-1.5 text-xs font-semibold text-stone-700 transition hover:bg-stone-50 hover:text-primary">
+              <ProfileAvatar user={currentUser} /><span className="max-w-32 truncate">{currentUser.name || 'Minha conta'}</span><ChevronDown className={`h-3.5 w-3.5 shrink-0 transition-transform ${accountMenuOpen ? 'rotate-180' : ''}`} />
             </button>
-            <button type="button" onClick={confirmLogout} aria-label="Sair da conta" title="Sair da conta" className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl text-stone-500 transition hover:bg-rose-50 hover:text-rose-700 sm:h-10 sm:w-10"><LogOut className="h-4 w-4" /></button>
-          </div> : <button type="button" onClick={currentUser?.role === 'admin' ? onOpenAdminPanel : onOpenAccount} className="inline-flex max-w-36 items-center gap-2 rounded-xl px-2 py-2 text-xs font-semibold text-stone-600 transition hover:bg-stone-50 hover:text-primary sm:max-w-48 sm:px-3" aria-label={currentUser?.role === 'admin' ? 'Abrir painel administrativo' : 'Entrar ou criar uma conta'}>
+            {accountMenuOpen && <AccountMenuPanel user={currentUser} onOpenAccount={openAccount} onOpenOrders={openOrders} onLogout={confirmLogout} />}
+          </div> : <button type="button" onClick={currentUser?.role === 'admin' ? onOpenAdminPanel : openAccount} className="inline-flex max-w-36 items-center gap-2 rounded-xl px-2 py-2 text-xs font-semibold text-stone-600 transition hover:bg-stone-50 hover:text-primary sm:max-w-48 sm:px-3" aria-label={currentUser?.role === 'admin' ? 'Abrir painel administrativo' : 'Entrar ou criar uma conta'}>
             {currentUser?.role === 'admin' ? <ShieldCheck className="h-4 w-4 shrink-0" /> : <LogIn className="h-4 w-4 shrink-0" />}
             <span className="truncate">{currentUser?.role === 'admin' ? 'Painel' : 'Entrar'}</span>
           </button>}
@@ -182,16 +236,22 @@ export function Header({ onOpenAccount, onOpenTracking, onOpenAdminPanel }) {
             </nav>
 
             <div className="border-t border-stone-100 pt-4">
-              {currentUser ? (
-                <div className="space-y-2">
-                  <div className="flex items-start gap-3 rounded-xl bg-stone-50 p-3">
-                    {currentUser.role === 'admin' ? <ShieldCheck className="mt-0.5 h-4 w-4 shrink-0 text-primary" /> : <UserRound className="mt-0.5 h-4 w-4 shrink-0 text-primary" />}
+              {currentUser?.role === 'customer' ? (
+                <div ref={mobileAccountMenuRef} className="space-y-2">
+                  <button type="button" onClick={() => setAccountMenuOpen((open) => !open)} aria-expanded={accountMenuOpen} className="flex min-h-14 w-full items-center gap-3 rounded-xl bg-stone-50 p-3 text-left">
+                    <ProfileAvatar user={currentUser} className="h-10 w-10" />
                     <div className="min-w-0">
-                      <p className="text-xs font-medium text-stone-500">{currentUser.role === 'admin' ? 'Conta administrativa' : 'Conta do cliente'}</p>
-                      <p className="mt-0.5 whitespace-normal break-words text-sm font-bold leading-snug text-stone-900">Olá, {currentUser.name}</p>
+                      <p className="text-xs font-medium text-stone-500">Conta do cliente</p>
+                      <p className="mt-0.5 truncate text-sm font-bold leading-snug text-stone-900">{currentUser.name || 'Minha conta'}</p>
                     </div>
-                  </div>
-                  {currentUser.role === 'customer' && <button type="button" onClick={openAccount} className="flex min-h-11 w-full items-center gap-2 rounded-xl border border-stone-200 px-3 text-sm font-semibold text-stone-700 transition hover:bg-stone-50"><UserRound className="h-4 w-4" />Minha conta</button>}
+                    <ChevronDown className={`ml-auto h-4 w-4 shrink-0 text-stone-400 transition-transform ${accountMenuOpen ? 'rotate-180' : ''}`} />
+                  </button>
+                  {accountMenuOpen && <AccountMenuPanel mobile user={currentUser} onOpenAccount={openAccount} onOpenOrders={openOrders} onLogout={confirmLogout} />}
+                </div>
+              ) : currentUser?.role === 'admin' ? (
+                <div className="space-y-2">
+                  <div className="flex min-h-12 items-center gap-3 rounded-xl bg-primary-light/60 p-3"><ShieldCheck className="h-4 w-4 shrink-0 text-primary" /><div className="min-w-0"><p className="text-xs font-medium text-stone-500">Conta administrativa</p><p className="truncate text-sm font-bold text-stone-900">{currentUser.name}</p></div></div>
+                  <button type="button" onClick={openAdminPanel} className="flex min-h-11 w-full items-center gap-2 rounded-xl border border-stone-200 px-3 text-sm font-semibold text-primary transition hover:bg-primary-light/50"><ShieldCheck className="h-4 w-4" />Painel administrativo</button>
                   <button type="button" onClick={confirmLogout} className="flex min-h-11 w-full items-center gap-2 rounded-xl border border-stone-200 px-3 text-sm font-semibold text-stone-600 transition hover:border-rose-100 hover:bg-rose-50 hover:text-rose-700"><LogOut className="h-4 w-4" />Sair da conta</button>
                 </div>
               ) : (

@@ -22,12 +22,33 @@ const AdminLogin = lazy(() => import('./components/AdminLogin').then((module) =>
 const OrderTrackingModal = lazy(() => import('./components/OrderTrackingModal').then((module) => ({ default: module.OrderTrackingModal })));
 import { NotificationProvider, useNotifications } from './components/Notifications';
 import { createPurchaseIntent, createSelectionIntent, hasVerifiedCustomerSession, PENDING_PURCHASE_KEY, PENDING_SELECTION_KEY, requiresCustomerAccount } from './utils/purchaseAccess';
+import { StartupSplash } from './components/StartupSplash';
 
 let aosInitialized = false;
+const STARTUP_SPLASH_MIN_MS = 2700;
+
+class AdminPanelErrorBoundary extends React.Component {
+  state = { hasError: false };
+
+  static getDerivedStateFromError() {
+    return { hasError: true };
+  }
+
+  componentDidCatch(error) {
+    console.error('Admin panel render failed:', error);
+  }
+
+  render() {
+    if (!this.state.hasError) return this.props.children;
+    return <main className="flex min-h-screen flex-col items-center justify-center gap-4 bg-[#fbf8f2] px-4 text-center"><section role="alert" className="max-w-md rounded-2xl border border-rose-200 bg-white p-6 shadow-sm"><h1 className="text-lg font-bold text-stone-900">O painel encontrou um erro</h1><p className="mt-2 text-sm text-stone-600">Atualize o painel para tentar carregar novamente. Sua sessão administrativa continua protegida.</p><div className="mt-5 flex justify-center gap-2"><button type="button" onClick={() => this.setState({ hasError: false })} className="min-h-11 rounded-xl bg-primary px-4 text-sm font-semibold text-white">Tentar novamente</button><button type="button" onClick={this.props.onClose} className="min-h-11 rounded-xl border border-stone-200 px-4 text-sm font-semibold text-stone-700">Voltar ao site</button></div></section></main>;
+  }
+}
 
 function AdminAccessRoute({ path, navigate }) {
-  const { currentUser, authLoading, verifyAdminAuthorization } = useAuth();
+  const { currentUser, authLoading, authError, verifyAdminAuthorization } = useAuth();
   const [accessState, setAccessState] = useState('checking');
+  const [accessError, setAccessError] = useState('');
+  const [retryCount, setRetryCount] = useState(0);
 
   useEffect(() => {
     let active = true;
@@ -39,8 +60,14 @@ function AdminAccessRoute({ path, navigate }) {
     }
 
     setAccessState('checking');
+    setAccessError('');
     verifyAdminAuthorization().then((result) => {
       if (!active) return;
+      if (result.error) {
+        setAccessError(result.error);
+        setAccessState('error');
+        return;
+      }
       if (result.ok) {
         setAccessState('authorized');
         if (path === '/admin/login') navigate('/admin', { replace: true });
@@ -48,16 +75,17 @@ function AdminAccessRoute({ path, navigate }) {
         setAccessState('denied');
         if (path === '/admin') navigate('/admin/login', { replace: true });
       }
-    }).catch(() => {
+    }).catch((error) => {
       if (!active) return;
-      setAccessState('denied');
-      if (path === '/admin') navigate('/admin/login', { replace: true });
+      setAccessError(error?.message || 'Não foi possível verificar as permissões administrativas.');
+      setAccessState('error');
     });
     return () => { active = false; };
-  }, [path, currentUser?.id, currentUser?.role, authLoading, verifyAdminAuthorization, navigate]);
+  }, [path, currentUser?.id, currentUser?.role, authLoading, retryCount, verifyAdminAuthorization, navigate]);
 
-  if (authLoading || accessState === 'checking') return <main className="flex min-h-screen items-center justify-center bg-[#fbf8f2] px-4 text-sm font-medium text-stone-500">Verificando acesso seguro…</main>;
-  if (path === '/admin' && accessState === 'authorized') return <Suspense fallback={<main className="flex min-h-screen items-center justify-center bg-[#fbf8f2] px-4 text-sm text-stone-500">Carregando painel…</main>}><AdminPanel onClose={() => navigate('/')} /></Suspense>;
+  if (authLoading || accessState === 'checking') return <main className="flex min-h-screen items-center justify-center bg-[#fbf8f2] px-4 text-sm font-medium text-stone-500"><span className="mr-3 h-5 w-5 animate-spin rounded-full border-2 border-stone-300 border-t-primary" />Verificando acesso seguro…</main>;
+  if (accessState === 'error') return <main className="flex min-h-screen flex-col items-center justify-center gap-4 bg-[#fbf8f2] px-4 text-center"><section role="alert" className="max-w-md rounded-2xl border border-rose-200 bg-white p-6 shadow-sm"><h1 className="text-lg font-bold text-stone-900">Não foi possível verificar o acesso</h1><p className="mt-2 text-sm text-stone-600">{authError || accessError}</p><div className="mt-5 flex flex-col justify-center gap-2 sm:flex-row"><button type="button" onClick={() => setRetryCount((count) => count + 1)} className="min-h-11 rounded-xl bg-primary px-4 text-sm font-semibold text-white">Tentar novamente</button><button type="button" onClick={() => navigate('/admin/login', { replace: true })} className="min-h-11 rounded-xl border border-stone-200 px-4 text-sm font-semibold text-stone-700">Ir para o login</button></div></section></main>;
+  if (path === '/admin' && accessState === 'authorized') return <AdminPanelErrorBoundary onClose={() => navigate('/')}><Suspense fallback={<main className="flex min-h-screen items-center justify-center bg-[#fbf8f2] px-4 text-sm text-stone-500"><span className="mr-3 h-5 w-5 animate-spin rounded-full border-2 border-stone-300 border-t-primary" />Carregando painel…</main>}><AdminPanel onClose={() => navigate('/')} /></Suspense></AdminPanelErrorBoundary>;
   return <Suspense fallback={<main className="flex min-h-screen items-center justify-center bg-[#fbf8f2] px-4 text-sm text-stone-500">Carregando acesso…</main>}><AdminLogin onBack={() => navigate('/')} onSuccess={() => navigate('/admin')} /></Suspense>;
 }
 
@@ -67,11 +95,12 @@ function DeliveryApp() {
   const [orderSuccessData, setOrderSuccessData] = useState(null);
   const [accountOpen, setAccountOpen] = useState(false);
   const [accountMode, setAccountMode] = useState('login');
+  const [accountInitialView, setAccountInitialView] = useState('account');
   const [pendingSelection, setPendingSelection] = useState(null);
   const [pathname, setPathname] = useState(() => window.location.pathname.replace(/\/+$/, '') || '/');
   const [trackingOpen, setTrackingOpen] = useState(false);
-  const { selectedProduct, isCartOpen, isCheckoutOpen, openProductDetails, closeProductDetails, addToCart, openCart, openCheckout, cartOwnerId } = useCart();
-  const { currentUser, authLoading, productSettings, inventory, stockAvailability, passwordRecoveryPending, verifyCustomerSession } = useAuth();
+  const { selectedProduct, isCartOpen, isCheckoutOpen, openProductDetails, closeProductDetails, addToCart, openCheckout, cartOwnerId } = useCart();
+  const { currentUser, authLoading, passwordRecoveryPending, productSettings, inventory, stockAvailability, verifyCustomerSession } = useAuth();
   const { notify } = useNotifications();
   const menuSectionRef = useRef(null);
 
@@ -81,6 +110,21 @@ function DeliveryApp() {
     setPathname(path);
     window.scrollTo({ top: 0, behavior: 'instant' });
   }, []);
+  const openAdminPanel = useCallback(() => navigate('/admin'), [navigate]);
+  const closeAccountModal = useCallback(() => setAccountOpen(false), []);
+  const openAccountFromHeader = useCallback(() => {
+    if (authLoading) return;
+    if (currentUser?.role === 'admin') { navigate('/admin'); return; }
+    setAccountMode(currentUser?.role === 'customer' ? 'profile' : 'login');
+    setAccountInitialView('account');
+    setAccountOpen(true);
+  }, [authLoading, currentUser?.role, navigate]);
+  const openOrdersFromHeader = useCallback(() => {
+    if (authLoading || currentUser?.role !== 'customer') return;
+    setAccountMode('profile');
+    setAccountInitialView('history');
+    setAccountOpen(true);
+  }, [authLoading, currentUser?.role]);
 
   useEffect(() => {
     const handlePopState = () => setPathname(window.location.pathname.replace(/\/+$/, '') || '/');
@@ -104,11 +148,11 @@ function DeliveryApp() {
       available: productSettings[product.id]?.available !== false,
       ...(product.id === 'combo-2-batidas-alcoolicas' ? {
         stockAvailability: (id, quantity = 1) => stockAvailability(id, quantity),
-        available: product.bases.some((pair) => {
+        available: productSettings[product.id]?.available !== false && product.bases.some((pair) => {
           const ids = pair.id.replace('dupla-', '').split('--');
           return ids.every((id) => stockAvailability(id));
         }),
-      } : product.id in inventory.flavors ? { available: stockAvailability(product.id) } : {}),
+      } : product.id in inventory.flavors ? { available: productSettings[product.id]?.available !== false && stockAvailability(product.id) } : {}),
     })), [productSettings, inventory, stockAvailability]);
 
   const openProductSelection = useCallback(async (product) => {
@@ -238,9 +282,8 @@ function DeliveryApp() {
     if (!addToCart(product, base, extras, intent.notes || '', quantity, true)) return false;
     setAccountOpen(false);
     if (intent.action === 'checkout') openCheckout();
-    else openCart();
     return true;
-  }, [currentUser, cartOwnerId, activeProducts, inventory, stockAvailability, addToCart, openCart, openCheckout, notify]);
+  }, [currentUser, cartOwnerId, activeProducts, inventory, stockAvailability, addToCart, openCheckout, notify]);
 
   const requestPurchase = (product, action = 'cart', base = null, extras = [], notes = '', quantity = 1) => {
     const intent = createPurchaseIntent(product, action, base, extras, notes, quantity);
@@ -344,7 +387,7 @@ function DeliveryApp() {
   return (
     <div className="min-h-screen flex flex-col bg-surface-50 text-ink font-sans selection:bg-primary selection:text-white">
       {/* Cabeçalho */}
-      <Header onOpenAccount={() => { setAccountMode('login'); setAccountOpen(true); }} onOpenTracking={() => setTrackingOpen(true)} onOpenAdminPanel={() => navigate('/admin')} />
+      <Header onOpenAccount={openAccountFromHeader} onOpenOrders={openOrdersFromHeader} onOpenTracking={() => setTrackingOpen(true)} onOpenAdminPanel={openAdminPanel} />
 
       {/* Banner Principal com Selo Integrado Junto à Imagem */}
       <HeroBanner onExploreClick={scrollToMenu} />
@@ -461,7 +504,7 @@ function DeliveryApp() {
       {/* Barra de Sacola Flutuante para Celular */}
       <MobileFloatingCart />
 
-      {accountOpen && <Suspense fallback={null}><AccountModal isOpen={accountOpen} initialMode={accountMode} onClose={() => setAccountOpen(false)} onDismiss={cancelAuthenticationFlow} onOpenAdminPanel={() => { setAccountOpen(false); navigate('/admin'); }} /></Suspense>}
+      {accountOpen && <Suspense fallback={null}><AccountModal isOpen={accountOpen} initialMode={accountMode} initialView={accountInitialView} onClose={closeAccountModal} onDismiss={cancelAuthenticationFlow} onOpenAdminPanel={openAdminPanel} /></Suspense>}
       {trackingOpen && <Suspense fallback={null}><OrderTrackingModal isOpen={trackingOpen} onClose={() => setTrackingOpen(false)} /></Suspense>}
 
     </div>
@@ -473,9 +516,74 @@ export default function App() {
     <NotificationProvider>
       <AuthProvider>
         <CartProvider>
-          <DeliveryApp />
+          <StartupGate />
         </CartProvider>
       </AuthProvider>
     </NotificationProvider>
+  );
+}
+
+function StartupGate() {
+  const { authLoading } = useAuth();
+  const [phase, setPhase] = useState('loading');
+  const [logoReady, setLogoReady] = useState(false);
+  const [timedOut, setTimedOut] = useState(false);
+  const [complete, setComplete] = useState(false);
+
+  useEffect(() => {
+    const logo = new Image();
+    logo.onload = () => setLogoReady(true);
+    // A missing logo must not prevent access to the application.
+    logo.onerror = () => setLogoReady(true);
+    logo.src = '/images/logo.jpg';
+    if (logo.complete) setLogoReady(true);
+  }, []);
+
+  useEffect(() => {
+    const timeout = window.setTimeout(() => setTimedOut(true), 15000);
+    return () => window.clearTimeout(timeout);
+  }, []);
+
+  useEffect(() => {
+    if (phase !== 'loading') return;
+    if (timedOut) {
+      setPhase('error');
+      return undefined;
+    }
+    if (authLoading || !logoReady) return undefined;
+
+    const startedAt = Number(window.__salencarSplashStartedAt) || performance.now();
+    const elapsed = Math.max(0, performance.now() - startedAt);
+    const remaining = Math.max(0, STARTUP_SPLASH_MIN_MS - elapsed);
+    if (remaining === 0) {
+      setPhase('exiting');
+      return undefined;
+    }
+    const minimumDuration = window.setTimeout(() => setPhase('exiting'), remaining);
+    return () => window.clearTimeout(minimumDuration);
+  }, [authLoading, logoReady, phase, timedOut]);
+
+  useEffect(() => {
+    if (phase !== 'exiting') return undefined;
+    const reducedMotion = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+    if (reducedMotion) {
+      setComplete(true);
+      return undefined;
+    }
+    // Safety fallback for browsers that do not dispatch transitionend.
+    const fallback = window.setTimeout(() => setComplete(true), 600);
+    return () => window.clearTimeout(fallback);
+  }, [phase]);
+
+  const continueToSite = () => {
+    setPhase('exiting');
+    setTimedOut(false);
+  };
+
+  return (
+    <>
+      <DeliveryApp />
+      {!complete && <StartupSplash phase={phase} onTransitionEnd={() => setComplete(true)} onRetry={() => window.location.reload()} onContinue={continueToSite} />}
+    </>
   );
 }

@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import {
   ArrowLeft, ArrowRight, Banknote, Check, CreditCard, Loader2, MapPin,
   LogIn, QrCode, Send, Store, Truck, X,
@@ -51,6 +51,7 @@ export function CheckoutModal({ onOrderSuccess, onRequestAuth }) {
   const [cepError, setCepError] = useState('');
   const [formErrors, setFormErrors] = useState({});
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const submitLockRef = useRef(false);
   const [orderError, setOrderError] = useState('');
   const [profilePrefilledFor, setProfilePrefilledFor] = useState('');
   const [selectedAddressId, setSelectedAddressId] = useState('new');
@@ -175,11 +176,13 @@ export function CheckoutModal({ onOrderSuccess, onRequestAuth }) {
 
   const handleFinishOrder = async (event) => {
     event.preventDefault();
+    if (submitLockRef.current) return;
     if (!validateAddress() || !validatePayment()) {
       if (!validateAddress()) setStep(1);
       else setStep(2);
       return;
     }
+    submitLockRef.current = true;
     const whatsappWindow = window.open('about:blank', '_blank');
     if (whatsappWindow) whatsappWindow.opener = null;
     setIsSubmitting(true);
@@ -232,6 +235,7 @@ export function CheckoutModal({ onOrderSuccess, onRequestAuth }) {
       notify({ type: 'error', title: 'Não foi possível registrar o pedido', message: err.message || 'Revise os dados e tente novamente.' });
       console.error('Erro ao finalizar pedido:', err?.code || err?.name || 'erro');
     } finally {
+      submitLockRef.current = false;
       setIsSubmitting(false);
     }
   };

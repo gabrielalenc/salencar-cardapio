@@ -1,5 +1,5 @@
 import React, { useEffect, useMemo, useState } from 'react';
-import { CheckCircle2, ContactRound, History, LockKeyhole, LogIn, LogOut, Mail, Settings2, UserRound, X, Trash2, Plus, MapPin, RotateCcw, ChevronDown, Eye, EyeOff, LoaderCircle, Package2 } from 'lucide-react';
+import { CheckCircle2, ContactRound, History, LockKeyhole, LogIn, LogOut, Mail, Settings2, UserRound, X, Trash2, Plus, MapPin, RotateCcw, ChevronDown, LoaderCircle, Package2 } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
 import { useCart } from '../context/CartContext';
 import { useNotifications } from './Notifications';
@@ -13,35 +13,41 @@ const ORDER_STATUS_STYLE = {
   preparing: 'bg-amber-50 text-amber-800 ring-amber-200', out_for_delivery: 'bg-violet-50 text-violet-700 ring-violet-200',
   completed: 'bg-stone-100 text-stone-700 ring-stone-200', cancelled: 'bg-rose-50 text-rose-700 ring-rose-200',
 };
-export function AccountModal({ isOpen, onClose, onDismiss, onOpenAdminPanel, initialMode = 'login' }) {
-  const { currentUser, users, orders, ordersLoading, ordersError, refreshOrders, addresses, authLoading, login, register, loginWithGoogle, resetPassword, logout, updateCustomerProfile, changeCustomerPassword, saveAddress, deleteAddress } = useAuth();
+export function AccountModal({ isOpen, onClose, onDismiss, onOpenAdminPanel, initialMode = 'login', initialView = 'account' }) {
+  const { currentUser, users, orders, ordersLoading, ordersError, refreshOrders, addresses, authLoading, login, register, verifyEmailCode, resendSignupCode, resetPassword, verifyRecoveryCode, updatePassword, loginWithGoogle, logout, updateCustomerProfile, saveAddress, deleteAddress } = useAuth();
   const { addOrderToCart, openCart } = useCart();
   const { confirm, notify } = useNotifications();
   const [mode, setMode] = useState('login');
   const [view, setView] = useState('account');
-  const [form, setForm] = useState({ name: '', email: '', password: '' });
+  const [form, setForm] = useState({ name: '', email: '', password: '', confirmPassword: '', token: '' });
+  const [verificationReturnMode, setVerificationReturnMode] = useState('login');
   const [profile, setProfile] = useState({ name: '', email: '', phone: '', address: '' });
-  const [passwordForm, setPasswordForm] = useState({ current: '', next: '' });
   const [error, setError] = useState('');
   const [notice, setNotice] = useState('');
   const [busy, setBusy] = useState(false);
+  const [showPassword, setShowPassword] = useState(false);
   const [addressDraft, setAddressDraft] = useState(null);
   const [expandedOrderId, setExpandedOrderId] = useState(null);
   const [reorderNotice, setReorderNotice] = useState(null);
-  const [showPassword, setShowPassword] = useState(false);
   const [viewport, setViewport] = useState({ top: 0, height: typeof window !== 'undefined' ? window.innerHeight : 800 });
   const userRecord = users.find((user) => user.id === currentUser?.id);
 
   useEffect(() => {
     if (!isOpen) return;
-    setMode(currentUser?.role === 'customer' ? 'profile' : initialMode);
-    setView(initialMode === 'password-reset' ? 'settings' : 'account');
-    setForm({ name: '', email: '', password: '' });
+    if (authLoading) return;
+    if (currentUser?.role === 'admin' && initialMode !== 'password-reset') {
+      onClose();
+      onOpenAdminPanel?.();
+      return;
+    }
+    if (mode === 'verify-recovery' || mode === 'new-password') return;
+    setMode(initialMode === 'password-reset' ? 'new-password' : currentUser?.role === 'customer' ? 'profile' : initialMode === 'profile' ? 'login' : initialMode);
+    setView(initialMode === 'password-reset' ? 'settings' : initialView);
+    setForm({ name: '', email: '', password: '', confirmPassword: '', token: '' });
     setProfile({ name: currentUser?.name || '', email: currentUser?.email || '', phone: userRecord?.phone || currentUser?.phone || '', address: userRecord?.address || currentUser?.address || '' });
-    setPasswordForm({ current: '', next: '' });
     setError('');
     setNotice('');
-  }, [isOpen, currentUser?.id, currentUser?.role, initialMode]);
+  }, [isOpen, currentUser?.id, currentUser?.role, authLoading, initialMode, initialView, onClose, onOpenAdminPanel]);
 
   const customerOrders = useMemo(() => getCustomerOrders(orders, currentUser), [orders, currentUser]);
 
@@ -86,6 +92,7 @@ export function AccountModal({ isOpen, onClose, onDismiss, onOpenAdminPanel, ini
   };
 
   if (!isOpen) return null;
+  if (authLoading) return <div className="fixed inset-0 z-[80] grid place-items-center bg-stone-950/55 p-4" role="status" aria-live="polite"><section className="flex items-center gap-3 rounded-2xl bg-white px-5 py-4 text-sm font-medium text-stone-600 shadow-elevated"><span className="h-5 w-5 animate-spin rounded-full border-2 border-stone-200 border-t-primary" />Verificando sua sessão…</section></div>;
 
   const submit = async (event) => {
     event.preventDefault();
@@ -93,31 +100,85 @@ export function AccountModal({ isOpen, onClose, onDismiss, onOpenAdminPanel, ini
     setBusy(true);
     setError('');
     setNotice('');
-    if (mode === 'register') {
-      if (form.name.trim().length < 2) { setError('Informe seu nome completo.'); setBusy(false); return; }
-      if (form.password.length < 8) { setError('A senha deve ter pelo menos 8 caracteres.'); setBusy(false); return; }
-      const result = await register(form);
+
+    if (mode === 'verify-email') {
+      const result = await verifyEmailCode(form.email, form.token);
       if (!result.ok) { setError(result.error); setBusy(false); return; }
-      if (result.confirmationRequired) { setNotice('Conta criada. Confirme seu e-mail pelo link enviado antes de entrar.'); setMode('login'); setForm((previous) => ({ ...previous, password: '' })); setBusy(false); return; }
-      onClose(); setBusy(false); return;
-    }
-    if (mode === 'recovery') {
-      const result = await resetPassword(form.email);
-      if (!result.ok) setError(result.error); else setNotice('Enviamos um link de recuperação para seu e-mail.');
-      setBusy(false); return;
-    }
-    const result = await login(form.email, form.password);
-    if (!result.ok) { setError(result.error); setBusy(false); return; }
-    if (result.user.role === 'admin') {
+      setBusy(false);
+      if (result.user?.role === 'admin') { onClose(); onOpenAdminPanel?.(); return; }
       onClose();
-      onOpenAdminPanel();
+      return;
+    }
+
+    if (mode === 'verify-recovery') {
+      const result = await verifyRecoveryCode(form.email, form.token);
+      if (!result.ok) { setError(result.error); setBusy(false); return; }
+      setMode('new-password');
+      setForm((previous) => ({ ...previous, password: '', confirmPassword: '', token: '' }));
+      setNotice('Identidade confirmada. Crie uma nova senha.');
       setBusy(false);
       return;
     }
+
+    if (mode === 'recovery') {
+      const result = await resetPassword(form.email);
+      if (!result.ok) { setError(result.error); setBusy(false); return; }
+      setVerificationReturnMode('recovery');
+      setMode('verify-recovery');
+      setNotice('Enviamos um código de recuperação para seu e-mail.');
+      setForm((previous) => ({ ...previous, token: '' }));
+      setBusy(false);
+      return;
+    }
+
+    if (mode === 'new-password') {
+      if (form.password.length < 8) { setError('A senha deve ter pelo menos 8 caracteres.'); setBusy(false); return; }
+      if (form.password !== form.confirmPassword) { setError('As senhas não coincidem.'); setBusy(false); return; }
+      const result = await updatePassword(form.password);
+      if (!result.ok) { setError(result.error); setBusy(false); return; }
+      setForm((previous) => ({ ...previous, password: '', confirmPassword: '' }));
+      setNotice('Senha atualizada com sucesso.');
+      if (currentUser?.role === 'admin') { setBusy(false); onClose(); onOpenAdminPanel?.(); return; }
+      setMode('profile');
+      setView('account');
+      setBusy(false);
+      return;
+    }
+
+    if (mode === 'register') {
+      if (form.name.trim().length < 2) { setError('Informe seu nome completo.'); setBusy(false); return; }
+      if (form.password.length < 8) { setError('A senha deve ter pelo menos 8 caracteres.'); setBusy(false); return; }
+      if (form.password !== form.confirmPassword) { setError('As senhas não coincidem.'); setBusy(false); return; }
+      const result = await register({ name: form.name, email: form.email, password: form.password });
+      if (!result.ok) { setError(result.error); setBusy(false); return; }
+      setVerificationReturnMode('register');
+      setMode('verify-email');
+      setForm((previous) => ({ ...previous, password: '', confirmPassword: '', token: '' }));
+      setNotice('Conta criada. Digite o código enviado por e-mail para confirmar o cadastro.');
+      setBusy(false);
+      return;
+    }
+
+    const result = await login(form.email, form.password);
+    if (!result.ok) { setError(result.error); setBusy(false); return; }
+    setBusy(false);
+    if (result.user?.role === 'admin') { onClose(); onOpenAdminPanel?.(); return; }
     setMode('profile');
     setView('account');
     setNotice('Login realizado com sucesso.');
-    setForm({ name: '', email: '', password: '' });
+    setForm({ name: '', email: '', password: '', confirmPassword: '', token: '' });
+  };
+
+  const resendVerificationCode = async () => {
+    if (busy) return;
+    setBusy(true);
+    setError('');
+    setNotice('');
+    const result = mode === 'verify-recovery'
+      ? await resetPassword(form.email)
+      : await resendSignupCode(form.email);
+    if (!result.ok) setError(result.error);
+    else setNotice(mode === 'verify-recovery' ? 'Enviamos outro código de recuperação.' : 'Enviamos outro código de confirmação.');
     setBusy(false);
   };
 
@@ -134,6 +195,7 @@ export function AccountModal({ isOpen, onClose, onDismiss, onOpenAdminPanel, ini
     if (!result.ok) { setError(result.error); notify({ type: 'error', title: 'Não foi possível sair', message: result.error }); return; }
     setMode('login');
     setView('account');
+    setForm({ name: '', email: '', password: '', confirmPassword: '', token: '' });
     setNotice('Você saiu da sua conta.');
     setError('');
   };
@@ -146,15 +208,21 @@ export function AccountModal({ isOpen, onClose, onDismiss, onOpenAdminPanel, ini
     setNotice('Seus dados foram atualizados com segurança.');
   };
 
-  const savePassword = async (event) => {
+  const saveAccountPassword = async (event) => {
     event.preventDefault();
+    if (busy) return;
+    setBusy(true);
     setError('');
-    if (passwordForm.next.length < 8) return setError('A nova senha deve ter pelo menos 8 caracteres.');
-    const result = await changeCustomerPassword(passwordForm.current, passwordForm.next);
-    if (!result.ok) return setError(result.error);
-    setPasswordForm({ current: '', next: '' });
-    setNotice('Senha atualizada com segurança.');
+    setNotice('');
+    if (form.password.length < 8) { setError('A senha deve ter pelo menos 8 caracteres.'); setBusy(false); return; }
+    if (form.password !== form.confirmPassword) { setError('As senhas não coincidem.'); setBusy(false); return; }
+    const result = await updatePassword(form.password);
+    if (!result.ok) { setError(result.error); setBusy(false); return; }
+    setForm((previous) => ({ ...previous, password: '', confirmPassword: '' }));
+    setNotice('Senha atualizada com sucesso.');
+    setBusy(false);
   };
+
 
   const submitAddress = async (event) => {
     event.preventDefault(); setError('');
@@ -166,14 +234,14 @@ export function AccountModal({ isOpen, onClose, onDismiss, onOpenAdminPanel, ini
   const setField = (field, value) => setForm((previous) => ({ ...previous, [field]: value }));
   const setProfileField = (field, value) => setProfile((previous) => ({ ...previous, [field]: value }));
   const menu = [
-    ['account', 'Minha conta', UserRound], ['data', 'Meus dados', ContactRound],
-    ['settings', 'Configurações', Settings2], ['history', 'Histórico de pedidos', History],
+    ['account', 'Minha conta', UserRound], ['data', 'Meus dados', ContactRound], ['settings', 'Segurança', Settings2], ['history', 'Histórico de pedidos', History],
   ];
+  const isVerificationMode = mode === 'verify-email' || mode === 'verify-recovery';
 
   return <div className="fixed inset-x-0 z-[80] flex flex-col items-center overflow-y-auto overscroll-contain bg-stone-950/55 p-2 backdrop-blur-sm sm:p-4" style={{ top: viewport.top, height: viewport.height }} onClick={dismiss}>
     <section role="dialog" aria-modal="true" aria-labelledby="account-title" className="account-dialog my-auto w-full max-w-2xl overflow-hidden rounded-2xl border border-stone-200 bg-white shadow-elevated sm:rounded-3xl" onFocusCapture={keepFocusedFieldVisible} onClick={(event) => event.stopPropagation()}>
       <header className="sticky top-0 z-10 flex items-center justify-between gap-3 border-b border-stone-100 bg-white/95 px-4 py-3 backdrop-blur sm:px-6 sm:py-4">
-        <div className="min-w-0"><p className="text-[10px] font-bold uppercase tracking-[0.18em] text-primary">Salencar</p><h2 id="account-title" className="mt-0.5 text-lg font-bold text-stone-900">{mode === 'profile' ? 'Conta do cliente' : mode === 'register' ? 'Criar conta' : mode === 'recovery' ? 'Recuperar acesso' : 'Acesse sua conta'}</h2></div>
+        <div className="min-w-0"><p className="text-[10px] font-bold uppercase tracking-[0.18em] text-primary">Salencar</p><h2 id="account-title" className="mt-0.5 text-lg font-bold text-stone-900">{mode === 'profile' ? 'Conta do cliente' : mode === 'register' ? 'Criar conta' : mode === 'verify-email' ? 'Confirme seu e-mail' : mode === 'recovery' || mode === 'verify-recovery' ? 'Recuperar senha' : mode === 'new-password' ? 'Criar nova senha' : 'Acesse sua conta'}</h2></div>
         <button type="button" onClick={dismiss} aria-label="Fechar" className="min-h-10 min-w-10 rounded-full p-2 text-stone-500 hover:bg-stone-100"><X className="h-5 w-5" /></button>
       </header>
 
@@ -189,7 +257,7 @@ export function AccountModal({ isOpen, onClose, onDismiss, onOpenAdminPanel, ini
               {addressDraft && <form onSubmit={submitAddress} className="space-y-3 rounded-xl border border-primary/20 bg-primary-light/30 p-4"><div className="grid gap-3 sm:grid-cols-2">{[['label','Identificação'],['recipient_name','Nome para entrega'],['phone','Telefone'],['street','Rua'],['number','Número'],['complement','Complemento'],['neighborhood','Bairro'],['city','Cidade'],['postal_code','CEP'],['reference','Referência']].map(([key,label]) => <label key={key} className={`block ${['street','reference'].includes(key) ? 'sm:col-span-2' : ''}`}><span className="mb-1 block text-[11px] font-medium text-stone-600">{label}</span><input required={!['label','complement','reference'].includes(key)} value={addressDraft[key] || ''} onChange={(event) => setAddressDraft((previous) => ({ ...previous, [key]: event.target.value }))} className="min-h-10 w-full rounded-lg border border-stone-200 bg-white px-3 text-sm" /></label>)}</div><label className="flex min-h-10 items-center gap-2 text-xs font-medium text-stone-700"><input type="checkbox" checked={Boolean(addressDraft.is_default)} onChange={(event) => setAddressDraft((previous) => ({ ...previous, is_default: event.target.checked }))} />Definir como endereço padrão</label><div className="flex gap-2"><button type="submit" className="min-h-10 flex-1 rounded-lg bg-primary px-3 text-xs font-semibold text-white">Salvar endereço</button><button type="button" onClick={() => setAddressDraft(null)} className="min-h-10 rounded-lg border border-stone-200 px-4 text-xs font-semibold text-stone-600">Cancelar</button></div></form>}
             </section>
           </div>}
-          {view === 'settings' && <form onSubmit={savePassword} className="space-y-4 rounded-2xl border border-stone-200 p-4 sm:p-5"><div><h3 className="text-sm font-bold text-stone-900">Configurações da conta</h3><p className="mt-1 text-xs text-stone-500">Defina uma nova senha para entrar na sua conta.</p></div><label className="block"><span className="mb-1.5 block text-xs font-medium text-stone-700">Nova senha</span><input required minLength={8} type="password" autoComplete="new-password" value={passwordForm.next} onChange={(event) => setPasswordForm((previous) => ({ ...previous, next: event.target.value }))} className={inputClass} /></label><button type="submit" className="min-h-11 w-full rounded-xl bg-primary px-4 py-3 text-sm font-semibold text-white hover:bg-primary-hover">Atualizar senha</button></form>}
+          {view === 'settings' && <form onSubmit={saveAccountPassword} className="space-y-4 rounded-2xl border border-stone-200 p-4 sm:p-5"><div><h3 className="text-sm font-bold text-stone-900">Segurança da conta</h3><p className="mt-1 text-xs text-stone-500">Atualize a senha da sua conta.</p></div><label className="block"><span className="mb-1.5 block text-xs font-medium text-stone-700">Nova senha</span><input required minLength={8} type="password" autoComplete="new-password" value={form.password} onChange={(event) => setField('password', event.target.value)} className={inputClass} /></label><label className="block"><span className="mb-1.5 block text-xs font-medium text-stone-700">Confirmar nova senha</span><input required minLength={8} type="password" autoComplete="new-password" value={form.confirmPassword} onChange={(event) => setField('confirmPassword', event.target.value)} className={inputClass} /></label><button type="submit" disabled={busy} className="min-h-11 w-full rounded-xl bg-primary px-4 py-3 text-sm font-semibold text-white hover:bg-primary-hover disabled:opacity-50">Atualizar senha</button></form>}
           {view === 'history' && <section className="space-y-4 sm:space-y-5">
             <div className="flex items-start gap-3 rounded-2xl bg-gradient-to-br from-primary-light to-surface-50 p-4 sm:p-5">
               <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-white text-primary shadow-subtle"><History className="h-5 w-5" /></span>
@@ -220,13 +288,23 @@ export function AccountModal({ isOpen, onClose, onDismiss, onOpenAdminPanel, ini
           {error && <p role="alert" className="rounded-lg bg-rose-50 px-3 py-2 text-xs text-rose-700">{error}</p>}
           <button type="button" onClick={handleLogout} className="inline-flex min-h-11 w-full items-center justify-center gap-2 rounded-xl border border-stone-200 px-4 py-3 text-sm font-semibold text-stone-700 hover:bg-stone-50"><LogOut className="h-4 w-4" />Sair da conta</button>
         </div> : <div className="mx-auto w-full max-w-md px-1 pb-2 sm:px-2">
-          <p className="mb-5 text-center text-xs leading-relaxed text-stone-500">{mode === 'register' ? 'Crie sua conta para acompanhar pedidos e salvar seus dados.' : mode === 'recovery' ? 'Recupere o acesso à sua conta por e-mail.' : 'Entre para acompanhar seus pedidos e agilizar sua próxima compra.'}</p>
-          {mode !== 'recovery' && <div className="mb-5 grid grid-cols-2 rounded-xl bg-stone-100 p-1"><button type="button" onClick={() => { setMode('login'); setError(''); setNotice(''); }} aria-pressed={mode === 'login'} className={`min-h-10 rounded-lg px-3 py-2 text-sm font-semibold ${mode === 'login' ? 'bg-white text-primary shadow-subtle' : 'text-stone-500'}`}>Entrar</button><button type="button" onClick={() => { setMode('register'); setError(''); setNotice(''); }} aria-pressed={mode === 'register'} className={`min-h-10 rounded-lg px-3 py-2 text-sm font-semibold ${mode === 'register' ? 'bg-white text-primary shadow-subtle' : 'text-stone-500'}`}>Criar conta</button></div>}
-          {mode !== 'recovery' && <button type="button" disabled={busy} onClick={handleGoogleLogin} className="mb-4 flex min-h-11 w-full items-center justify-center gap-3 rounded-xl border border-stone-200 bg-white px-4 py-3 text-sm font-semibold text-stone-700 transition hover:bg-stone-50 disabled:opacity-50"><svg aria-hidden="true" viewBox="0 0 48 48" className="h-5 w-5"><path fill="#EA4335" d="M24 9.5c3.54 0 6.71 1.22 9.21 3.6l6.85-6.85C35.9 2.38 30.47 0 24 0 14.62 0 6.51 5.38 2.56 13.22l7.98 6.19C12.43 13.72 17.74 9.5 24 9.5Z"/><path fill="#4285F4" d="M46.98 24.55c0-1.57-.15-3.09-.38-4.55H24v9.02h12.94c-.58 2.96-2.26 5.48-4.76 7.18l7.73 6C44.42 37.98 46.98 31.8 46.98 24.55Z"/><path fill="#FBBC05" d="M10.53 28.59A14.4 14.4 0 0 1 9.75 24c0-1.59.27-3.13.76-4.59l-7.98-6.2A23.9 23.9 0 0 0 0 24c0 3.87.93 7.52 2.56 10.78l7.97-6.19Z"/><path fill="#34A853" d="M24 48c6.48 0 11.93-2.13 15.9-5.8l-7.73-6c-2.14 1.44-4.88 2.3-8.17 2.3-6.26 0-11.57-4.22-13.47-9.91l-7.98 6.19C6.51 42.62 14.62 48 24 48Z"/></svg>Entrar com Google</button>}
-          {mode !== 'recovery' && <div className="mb-4 flex items-center gap-3 text-[10px] uppercase tracking-wide text-stone-400"><span className="h-px flex-1 bg-stone-200" />ou com e-mail<span className="h-px flex-1 bg-stone-200" /></div>}
-          {mode === 'recovery' && <div className="mb-4"><h3 className="text-sm font-bold text-stone-800">Recuperar acesso</h3><p className="mt-1 text-xs text-stone-500">Informe o e-mail da conta para receber o link de recuperação.</p></div>}
-          <form onSubmit={submit} className="space-y-3.5">{mode === 'register' && <label className="block"><span className="mb-1.5 block text-xs font-medium text-stone-700">Nome completo</span><input autoComplete="name" required value={form.name} onChange={(event) => setField('name', event.target.value)} className={inputClass} placeholder="Seu nome" /></label>}<label className="block"><span className="mb-1.5 block text-xs font-medium text-stone-700">E-mail</span><span className="relative block"><Mail className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-stone-400" /><input type="email" autoComplete="email" required value={form.email} onChange={(event) => setField('email', event.target.value)} className={`${inputClass} pl-10`} placeholder="voce@email.com" /></span></label>{mode !== 'recovery' && <label className="block"><span className="mb-1.5 block text-xs font-medium text-stone-700">Senha</span><span className="relative block"><LockKeyhole className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-stone-400" /><input type={showPassword ? 'text' : 'password'} autoComplete={mode === 'register' ? 'new-password' : 'current-password'} minLength={mode === 'register' ? 8 : undefined} required value={form.password} onChange={(event) => setField('password', event.target.value)} className={`${inputClass} pl-10 pr-11`} placeholder={mode === 'register' ? 'Mínimo de 8 caracteres' : 'Sua senha'} /><button type="button" onClick={() => setShowPassword((value) => !value)} aria-label={showPassword ? 'Ocultar senha' : 'Mostrar senha'} className="absolute right-2 top-1/2 flex h-9 w-9 -translate-y-1/2 items-center justify-center rounded-lg text-stone-400 hover:bg-stone-100">{showPassword ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}</button></span></label>}{mode === 'login' && <div className="-mt-2 flex justify-end"><button type="button" onClick={() => { setMode('recovery'); setError(''); setNotice(''); }} className="min-h-9 px-1 text-xs font-semibold text-primary hover:underline">Esqueci minha senha</button></div>}{error && <p role="alert" className="rounded-lg bg-rose-50 px-3 py-2 text-xs text-rose-700">{error}</p>}{notice && <p role="status" className="inline-flex items-center gap-1.5 text-xs text-primary"><CheckCircle2 className="h-4 w-4" />{notice}</p>}<button type="submit" disabled={busy} className="mt-1 flex min-h-11 w-full items-center justify-center gap-2 rounded-xl bg-primary px-4 py-3 text-sm font-semibold text-white hover:bg-primary-hover disabled:opacity-50">{busy ? <span className="animate-pulse">Aguarde…</span> : <><LogIn className="h-4 w-4" />{mode === 'register' ? 'Criar conta' : mode === 'recovery' ? 'Enviar link de recuperação' : 'Entrar'}</>}</button></form>
-<div className="mt-5 border-t border-stone-100 pt-4 text-center text-xs text-stone-500">{mode === 'login' ? <p>Ainda não tem conta? <button type="button" onClick={() => { setMode('register'); setError(''); setNotice(''); }} className="min-h-9 px-1 font-bold text-primary hover:underline">Criar conta</button></p> : mode === 'register' ? <p>Já tem uma conta? <button type="button" onClick={() => { setMode('login'); setError(''); setNotice(''); }} className="min-h-9 px-1 font-bold text-primary hover:underline">Entrar</button></p> : <p>Lembrou sua senha? <button type="button" onClick={() => { setMode('login'); setError(''); setNotice(''); }} className="min-h-9 px-1 font-bold text-primary hover:underline">Voltar para entrar</button></p>}</div>
+          <p className="mb-5 text-center text-xs leading-relaxed text-stone-500">{mode === 'register' ? 'Crie sua conta com e-mail e senha.' : mode === 'verify-email' ? `Digite o código enviado para ${form.email} para confirmar o cadastro.` : mode === 'recovery' ? 'Informe o e-mail cadastrado para receber um código de recuperação.' : mode === 'verify-recovery' ? `Digite o código de recuperação enviado para ${form.email}.` : mode === 'new-password' ? 'Defina uma nova senha para sua conta.' : 'Entre ou crie sua conta usando Google ou e-mail.'}</p>
+          {['login', 'register'].includes(mode) && <div className="mb-4 grid grid-cols-2 rounded-xl bg-stone-100 p-1"><button type="button" onClick={() => { setMode('login'); setError(''); setNotice(''); }} aria-pressed={mode === 'login'} className={`min-h-10 rounded-lg px-3 py-2 text-sm font-semibold ${mode === 'login' ? 'bg-white text-primary shadow-subtle' : 'text-stone-500'}`}>Entrar</button><button type="button" onClick={() => { setMode('register'); setError(''); setNotice(''); }} aria-pressed={mode === 'register'} className={`min-h-10 rounded-lg px-3 py-2 text-sm font-semibold ${mode === 'register' ? 'bg-white text-primary shadow-subtle' : 'text-stone-500'}`}>Criar conta</button></div>}
+          {['login', 'register'].includes(mode) && <button type="button" disabled={busy} onClick={handleGoogleLogin} className="mb-4 flex min-h-11 w-full items-center justify-center gap-3 rounded-xl border border-stone-200 bg-white px-4 py-3 text-sm font-semibold text-stone-700 transition hover:bg-stone-50 disabled:opacity-50"><svg aria-hidden="true" viewBox="0 0 48 48" className="h-5 w-5"><path fill="#EA4335" d="M24 9.5c3.54 0 6.71 1.22 9.21 3.6l6.85-6.85C35.9 2.38 30.47 0 24 0 14.62 0 6.51 5.38 2.56 13.22l7.98 6.19C12.43 13.72 17.74 9.5 24 9.5Z"/><path fill="#4285F4" d="M46.98 24.55c0-1.57-.15-3.09-.38-4.55H24v9.02h12.94c-.58 2.96-2.26 5.48-4.76 7.18l7.73 6C44.42 37.98 46.98 31.8 46.98 24.55Z"/><path fill="#FBBC05" d="M10.53 28.59A14.4 14.4 0 0 0 9.75 24c0-1.59.27-3.13.76-4.59l-7.98-6.2A23.9 23.9 0 0 0 0 24c0 3.87.93 7.52 2.56 10.78l7.97-6.19Z"/><path fill="#34A853" d="M24 48c6.48 0 11.93-2.13 15.9-5.8l-7.73-6c-2.14 1.44-4.88 2.3-8.17 2.3-6.26 0-11.57-4.22-13.47-9.91l-7.98 6.19C6.51 42.62 14.62 48 24 48Z"/></svg>Continuar com Google</button>}
+          {['login', 'register'].includes(mode) && <div className="mb-4 flex items-center gap-3 text-[10px] uppercase tracking-wide text-stone-400"><span className="h-px flex-1 bg-stone-200" />ou com e-mail<span className="h-px flex-1 bg-stone-200" /></div>}
+          <form onSubmit={submit} className="space-y-3.5">
+            {mode === 'register' && <label className="block"><span className="mb-1.5 block text-xs font-medium text-stone-700">Nome completo</span><input autoComplete="name" required value={form.name} onChange={(event) => setField('name', event.target.value)} className={inputClass} placeholder="Seu nome" /></label>}
+            {['login', 'register', 'recovery'].includes(mode) && <label className="block"><span className="mb-1.5 block text-xs font-medium text-stone-700">E-mail</span><span className="relative block"><Mail className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-stone-400" /><input type="email" autoComplete="email" required value={form.email} onChange={(event) => setField('email', event.target.value)} className={`${inputClass} pl-10`} placeholder="voce@email.com" /></span></label>}
+            {isVerificationMode && <label className="block"><span className="mb-1.5 block text-xs font-medium text-stone-700">Código de verificação</span><input inputMode="numeric" autoComplete="one-time-code" required maxLength={8} value={form.token} onChange={(event) => setField('token', event.target.value.replace(/\s/g, ''))} className={`${inputClass} text-center text-lg tracking-[.35em]`} placeholder="000000" /></label>}
+            {['login', 'register'].includes(mode) && <label className="block"><span className="mb-1.5 block text-xs font-medium text-stone-700">{mode === 'register' ? 'Criar senha' : 'Senha'}</span><span className="relative block"><LockKeyhole className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-stone-400" /><input required type="password" autoComplete={mode === 'register' ? 'new-password' : 'current-password'} minLength={mode === 'register' ? 8 : undefined} value={form.password} onChange={(event) => setField('password', event.target.value)} className={`${inputClass} pl-10`} placeholder={mode === 'register' ? 'Mínimo de 8 caracteres' : 'Sua senha'} /></span></label>}
+            {mode === 'register' && <label className="block"><span className="mb-1.5 block text-xs font-medium text-stone-700">Confirmar senha</span><span className="relative block"><LockKeyhole className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-stone-400" /><input required type="password" autoComplete="new-password" minLength={8} value={form.confirmPassword} onChange={(event) => setField('confirmPassword', event.target.value)} className={`${inputClass} pl-10`} placeholder="Digite novamente a senha" /></span></label>}
+            {mode === 'new-password' && <><label className="block"><span className="mb-1.5 block text-xs font-medium text-stone-700">Nova senha</span><input required type="password" autoComplete="new-password" minLength={8} value={form.password} onChange={(event) => setField('password', event.target.value)} className={inputClass} /></label><label className="block"><span className="mb-1.5 block text-xs font-medium text-stone-700">Confirmar nova senha</span><input required type="password" autoComplete="new-password" minLength={8} value={form.confirmPassword} onChange={(event) => setField('confirmPassword', event.target.value)} className={inputClass} /></label></>}
+            {error && <p role="alert" className="rounded-lg bg-rose-50 px-3 py-2 text-xs text-rose-700">{error}</p>}
+            {notice && <p role="status" className="inline-flex items-center gap-1.5 text-xs text-primary"><CheckCircle2 className="h-4 w-4" />{notice}</p>}
+            <button type="submit" disabled={busy} className="mt-1 flex min-h-11 w-full items-center justify-center gap-2 rounded-xl bg-primary px-4 py-3 text-sm font-semibold text-white hover:bg-primary-hover disabled:opacity-50">{busy ? <span className="animate-pulse">Aguarde…</span> : <><LogIn className="h-4 w-4" />{isVerificationMode ? 'Confirmar código' : mode === 'register' ? 'Criar conta' : mode === 'recovery' ? 'Enviar código de recuperação' : mode === 'new-password' ? 'Salvar nova senha' : 'Entrar'}</>}</button>
+          </form>
+          {mode === 'login' && <button type="button" onClick={() => { setMode('recovery'); setError(''); setNotice(''); }} className="mt-3 min-h-10 w-full text-xs font-semibold text-primary hover:underline">Esqueci minha senha</button>}
+          {isVerificationMode && <><button type="button" disabled={busy} onClick={resendVerificationCode} className="mt-3 min-h-10 w-full text-xs font-semibold text-primary hover:underline disabled:opacity-50">Reenviar código</button><button type="button" onClick={() => { setMode(verificationReturnMode); setForm((previous) => ({ ...previous, token: '' })); setError(''); setNotice(''); }} className="mt-1 min-h-10 w-full text-xs font-semibold text-stone-500 hover:underline">Voltar</button></>}
         </div>}
       </div>
     </section>
