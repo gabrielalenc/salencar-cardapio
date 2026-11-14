@@ -10,6 +10,23 @@ import { useNotifications } from './Notifications';
 
 const steps = ['Endereço', 'Pagamento', 'Revisão'];
 
+function checkoutIdempotency(orderItems, customerId) {
+  const fingerprint = JSON.stringify(orderItems.map((item) => ({
+    productId: item.product.id,
+    baseId: item.base?.id || '',
+    extras: (item.extras || []).map((extra) => extra.id).sort(),
+    quantity: item.quantity,
+  })));
+  const storageKey = `salencar_order_attempt:${customerId}:${fingerprint}`;
+  try {
+    const existing = sessionStorage.getItem(storageKey);
+    if (existing) return { key: existing, storageKey };
+  } catch { /* use an in-memory attempt key when storage is unavailable */ }
+  const key = crypto.randomUUID();
+  try { sessionStorage.setItem(storageKey, key); } catch { /* server still enforces each submitted key */ }
+  return { key, storageKey };
+}
+
 function CheckoutField({ label, field, optional, type = 'text', value, onChange, error, inputClass, ...props }) {
   const handleChange = (event) => {
     const rawValue = event.target.value;
@@ -183,6 +200,7 @@ export function CheckoutModal({ onOrderSuccess, onRequestAuth }) {
       return;
     }
     submitLockRef.current = true;
+    const idempotency = checkoutIdempotency(items, currentUser.id);
     const whatsappWindow = window.open('about:blank', '_blank');
     if (whatsappWindow) whatsappWindow.opener = null;
     setIsSubmitting(true);
@@ -195,6 +213,7 @@ export function CheckoutModal({ onOrderSuccess, onRequestAuth }) {
         neighborhood: formData.neighborhood.trim(), city: formData.city.trim(), postal_code: formData.cep.trim(), reference: formData.reference.trim(),
       } : {};
       const result = await recordOrder({
+        idempotencyKey: idempotency.key,
         customerName: formData.name.trim(),
         phone: formData.phone.trim(),
         items: items.map((item) => ({
@@ -222,6 +241,7 @@ export function CheckoutModal({ onOrderSuccess, onRequestAuth }) {
       });
       if (!result?.ok) throw new Error(result?.error || 'Não foi possível registrar o pedido.');
       const savedOrder = result.order;
+      try { sessionStorage.removeItem(idempotency.storageKey); } catch { /* order was saved; storage cleanup is optional */ }
       const message = buildWhatsAppMessage(savedOrder.id);
       const whatsappUrl = `https://wa.me/${settings.whatsappNumber}?text=${encodeURIComponent(message)}`;
       if (whatsappWindow) whatsappWindow.location.href = whatsappUrl;

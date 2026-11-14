@@ -521,15 +521,19 @@ export function AuthProvider({ children }) {
     }
     const preferenceResult = await savePaymentPreference(paymentId);
     if (!preferenceResult.ok) return preferenceResult;
-    const { data, error } = await supabase.rpc('create_customer_order', {
+    const { data, error } = await supabase.rpc('create_customer_order_idempotent', {
       p_order: { customer_name: order.customerName || currentUser.name, phone: order.phone, subtotal: order.subtotal, delivery_fee: order.deliveryFee, total: order.total, delivery_type: order.deliveryType, address_snapshot: order.addressSnapshot || {}, payment_method: paymentId, order_notes: order.orderNotes || '' },
       p_items: order.items.map((item) => ({ product_id: item.productId, product_name: item.productName, product_image: item.productImage || '', base_id: item.baseId || '', option: item.option || '', extras: item.extras || [], quantity: item.quantity, unit_price: item.unitPrice, total_price: item.totalPrice })),
+      p_idempotency_key: order.idempotencyKey,
     });
     if (error) {
       console.error('Supabase create_customer_order failed:', { code: error.code, message: error.message, status: error.status });
+      const migrationMissing = ['PGRST202', '42883', '42P01', 'PGRST205'].includes(error.code);
       return {
         ok: false,
-        error: ['P0001', '22023', '23514'].includes(error.code)
+        error: migrationMissing
+          ? 'O banco ainda não tem as migrations de catálogo e pedidos necessárias. Aplique as migrations pendentes no Supabase e tente novamente.'
+          : ['P0001', '22023', '23514'].includes(error.code)
           ? error.message
           : 'N\u00e3o foi poss\u00edvel registrar o pedido agora. Confira sua conex\u00e3o e tente novamente.',
       };

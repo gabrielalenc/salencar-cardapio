@@ -6,14 +6,16 @@ O frontend usa Supabase Auth e tabelas protegidas por RLS para perfis, endereço
 
 1. Crie um projeto no [Supabase](https://supabase.com/dashboard).
 2. Abra **SQL Editor → New query**, cole o conteúdo de `supabase/migrations/20261107000000_customer_accounts_orders.sql` e execute.
-3. Execute também, nesta ordem, `supabase/migrations/20261107120000_ensure_customer_profile.sql`, `supabase/migrations/20261107130000_admin_access_hardening.sql`, `supabase/migrations/20261107150000_delivery_quote_flow.sql`, `supabase/migrations/20261110160000_authoritative_catalog_orders.sql` e `supabase/migrations/20261111120000_admin_dashboard_inventory.sql`.
+3. Execute também, nesta ordem, `supabase/migrations/20261107120000_ensure_customer_profile.sql`, `supabase/migrations/20261107130000_admin_access_hardening.sql`, `supabase/migrations/20261107150000_delivery_quote_flow.sql`, `supabase/migrations/20261110160000_authoritative_catalog_orders.sql` e `supabase/migrations/20261111120000_admin_dashboard_inventory.sql`, e, por fim, `supabase/migrations/20261113120000_order_idempotency_and_availability.sql`.
 4. Confira em **Table Editor** se foram criadas `profiles`, `addresses`, `customer_preferences`, `catalog_products`, `inventory_settings`, `inventory_items`, `orders` e `order_items` e se RLS está ativa.
 
 Se a migration base já foi aplicada no projeto, não a execute novamente; aplique apenas as migrations posteriores que ainda não constarem no histórico do Supabase.
 
-A função `create_customer_order` grava o pedido e todos os itens em uma transação. A migration mais recente cria um catálogo protegido por RLS e recalcula nome, imagem, opção, adicionais e preços no banco; os valores enviados pelo navegador não definem o total salvo. A tabela permite consulta pública dos dados do cardápio e somente administradores podem alterar preços ou ativar/desativar produtos. Clientes só leem seus pedidos/endereço/perfil e não podem alterar `profiles.role`; administradores são determinados pelo banco.
+A função `create_customer_order_idempotent` serializa retentativas pela chave única do checkout e chama `create_customer_order`, que grava o pedido e todos os itens em uma transação. A migration mais recente cria um catálogo protegido por RLS e recalcula nome, imagem, opção, adicionais e preços no banco; os valores enviados pelo navegador não definem o total salvo. A tabela permite consulta pública dos dados do cardápio e somente administradores podem alterar preços ou ativar/desativar produtos. Clientes só leem seus pedidos/endereço/perfil e não podem alterar `profiles.role`; administradores são determinados pelo banco.
 
 A migration `20261111120000_admin_dashboard_inventory.sql` adiciona custo privado por produto para estimativas de lucro, disponibilidade do cardápio, estoque persistido e funções administrativas protegidas. O Dashboard usa apenas pedidos reais do Supabase; o lucro fica indisponível enquanto faltar custo de algum produto vendido no período. O estoque começa em zero e o controle automático começa desligado: informe os saldos reais no painel antes de ativar a baixa automática. Quando ativado, a baixa ocorre uma única vez na confirmação, é validada contra pedidos simultâneos e é devolvida uma única vez se um pedido confirmado for cancelado.
+
+Aplique `20261113120000_order_idempotency_and_availability.sql` depois das migrations de catálogo e estoque. Ela adiciona idempotência ao checkout e recusa produtos pausados ou indisponíveis. Confirme a RPC com `select has_function_privilege('authenticated', 'public.create_customer_order_idempotent(jsonb,jsonb,uuid)', 'EXECUTE');` e confirme a migration no histórico do projeto antes de testar pedidos.
 
 ## 2. Criar a conta administrativa
 
@@ -83,11 +85,11 @@ select count(*) as catalog_product_count
 from public.catalog_products;
 
 select
-  has_function_privilege('authenticated', 'public.create_customer_order(jsonb,jsonb)', 'EXECUTE') as customer_can_create_order,
-  has_function_privilege('anon', 'public.create_customer_order(jsonb,jsonb)', 'EXECUTE') as anonymous_can_create_order;
+  has_function_privilege('authenticated', 'public.create_customer_order_idempotent(jsonb,jsonb,uuid)', 'EXECUTE') as customer_can_create_order,
+  has_function_privilege('anon', 'public.create_customer_order_idempotent(jsonb,jsonb,uuid)', 'EXECUTE') as anonymous_can_create_order;
 ```
 
-O resultado esperado inclui as três tabelas com `rls_enabled = true`, ao menos uma política para cada uma, produtos no catálogo, `customer_can_create_order = true` e `anonymous_can_create_order = false`. Se `catalog_products` ou a função não existir, aplique `supabase/migrations/20261110160000_authoritative_catalog_orders.sql` integralmente no SQL Editor. Essa migration usa `if not exists`, recria suas políticas por nome e semeia apenas IDs ausentes; ela não apaga pedidos nem sobrescreve os preços já cadastrados. Se a tabela existir e estiver vazia, revise os dados do cardápio no banco antes de receber pedidos.
+O resultado esperado inclui as três tabelas com `rls_enabled = true`, ao menos uma política para cada uma, produtos no catálogo, `customer_can_create_order = true` e `anonymous_can_create_order = false`. Um erro PostgREST `PGRST205` para `catalog_products` significa que a tabela não está publicada no cache de esquema (normalmente porque a migration do catálogo não foi aplicada no projeto configurado). Confira o histórico em **Database → Migrations** e aplique somente as pendentes, na ordem: `20261110160000_authoritative_catalog_orders.sql`, `20261111120000_admin_dashboard_inventory.sql`, `20261113120000_order_idempotency_and_availability.sql`. Aplique as migrations base de contas e pedidos primeiro se ainda estiverem pendentes. A migration do catálogo usa `if not exists`, recria suas políticas por nome e semeia apenas IDs ausentes; ela não apaga pedidos nem sobrescreve preços existentes. Se a tabela existir e estiver vazia, revise os dados do cardápio no banco antes de receber pedidos.
 ## 6. Verificação pós-configuração
 
 Depois da configuração, teste cadastro por e-mail e confirmação OTP, login com senha, recuperação por código OTP, OAuth Google, persistência após recarregar, logout, perfil e endereço, dois pedidos consecutivos, acompanhamento como cliente e mudança de status como administrador. A implementação pode ser compilada sem credenciais; esses testes de ponta a ponta precisam de um projeto Supabase, SMTP funcional e credenciais OAuth reais.

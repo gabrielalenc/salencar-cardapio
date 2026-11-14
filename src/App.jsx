@@ -25,7 +25,7 @@ import { createPurchaseIntent, createSelectionIntent, hasVerifiedCustomerSession
 import { StartupSplash } from './components/StartupSplash';
 
 let aosInitialized = false;
-const STARTUP_SPLASH_MIN_MS = 2700;
+const STARTUP_SPLASH_MAX_MS = 2900;
 
 class AdminPanelErrorBoundary extends React.Component {
   state = { hasError: false };
@@ -524,44 +524,20 @@ export default function App() {
 }
 
 function StartupGate() {
-  const { authLoading } = useAuth();
   const [phase, setPhase] = useState('loading');
-  const [logoReady, setLogoReady] = useState(false);
-  const [timedOut, setTimedOut] = useState(false);
   const [complete, setComplete] = useState(false);
 
   useEffect(() => {
-    const logo = new Image();
-    logo.onload = () => setLogoReady(true);
-    // A missing logo must not prevent access to the application.
-    logo.onerror = () => setLogoReady(true);
-    logo.src = '/images/logo.jpg';
-    if (logo.complete) setLogoReady(true);
-  }, []);
-
-  useEffect(() => {
-    const timeout = window.setTimeout(() => setTimedOut(true), 15000);
-    return () => window.clearTimeout(timeout);
-  }, []);
-
-  useEffect(() => {
-    if (phase !== 'loading') return;
-    if (timedOut) {
-      setPhase('error');
-      return undefined;
-    }
-    if (authLoading || !logoReady) return undefined;
-
     const startedAt = Number(window.__salencarSplashStartedAt) || performance.now();
     const elapsed = Math.max(0, performance.now() - startedAt);
-    const remaining = Math.max(0, STARTUP_SPLASH_MIN_MS - elapsed);
-    if (remaining === 0) {
-      setPhase('exiting');
+    if (elapsed >= STARTUP_SPLASH_MAX_MS - 420) {
+      setComplete(true);
       return undefined;
     }
-    const minimumDuration = window.setTimeout(() => setPhase('exiting'), remaining);
-    return () => window.clearTimeout(minimumDuration);
-  }, [authLoading, logoReady, phase, timedOut]);
+    const beforeFade = Math.max(0, STARTUP_SPLASH_MAX_MS - elapsed - 420);
+    const hideTimer = window.setTimeout(() => setPhase('exiting'), beforeFade);
+    return () => window.clearTimeout(hideTimer);
+  }, []);
 
   useEffect(() => {
     if (phase !== 'exiting') return undefined;
@@ -571,19 +547,14 @@ function StartupGate() {
       return undefined;
     }
     // Safety fallback for browsers that do not dispatch transitionend.
-    const fallback = window.setTimeout(() => setComplete(true), 600);
+    const fallback = window.setTimeout(() => setComplete(true), 450);
     return () => window.clearTimeout(fallback);
   }, [phase]);
-
-  const continueToSite = () => {
-    setPhase('exiting');
-    setTimedOut(false);
-  };
 
   return (
     <>
       <DeliveryApp />
-      {!complete && <StartupSplash phase={phase} onTransitionEnd={() => setComplete(true)} onRetry={() => window.location.reload()} onContinue={continueToSite} />}
+      {!complete && <StartupSplash phase={phase} onTransitionEnd={() => setComplete(true)} />}
     </>
   );
 }
