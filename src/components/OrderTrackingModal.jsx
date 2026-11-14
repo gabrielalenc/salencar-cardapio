@@ -1,20 +1,85 @@
-import React, { useMemo } from 'react';
-import { Check, CheckCircle2, CookingPot, MapPin, PackageCheck, Truck, X, XCircle } from 'lucide-react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
+import { Check, CheckCircle2, CookingPot, MapPin, PackageCheck, Star, Truck, X, XCircle } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
+import { supabase } from '../lib/supabase';
+import { STORE_CONFIG } from '../config/storeConfig';
 import { formatCurrency } from '../utils/formatters';
-import { customerOrderStatus, getCustomerOrders, splitCustomerOrders } from '../utils/orders';
+import { CUSTOMER_COMPLETED_TRACKING_MS, customerOrderStatus, getCustomerOrders, splitCustomerOrders } from '../utils/orders';
 import { CustomerQuotePanel } from './CustomerQuotePanel';
 
 const STEPS = [
   { id: 'confirmed', label: 'Pedido recebido', detail: 'Recebemos os dados do seu pedido.', icon: PackageCheck },
   { id: 'preparing', label: 'Em preparação', detail: 'O estabelecimento está preparando seu pedido.', icon: CookingPot },
   { id: 'out_for_delivery', label: 'Saiu para entrega', detail: 'Seu pedido está a caminho!', icon: Truck },
-  { id: 'completed', label: 'Concluído', detail: 'Pedido entregue ou retirado. Obrigado!', icon: CheckCircle2 },
+  { id: 'completed', label: 'Pedido concluído', detail: 'Pedido entregue ou retirado. Obrigado!', icon: CheckCircle2 },
 ];
 
 const dateTime = (value) => value ? new Date(value).toLocaleString('pt-BR', { dateStyle: 'short', timeStyle: 'short' }) : '—';
+const schemaError = 'Não foi possível carregar confirmações e avaliações. A loja precisa aplicar a migration de avaliações no Supabase.';
 
-function TrackingCard({ order }) {
+function ReviewExperience({ order, receipt, review, onConfirm, onSubmitReview }) {
+  const [rating, setRating] = useState(0);
+  const [comment, setComment] = useState('');
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState('');
+  const [whatsAppUrl, setWhatsAppUrl] = useState('');
+
+  const confirmDelivery = async () => {
+    setBusy(true);
+    setError('');
+    try {
+      await onConfirm(order);
+    } catch (cause) {
+      setError(cause.message || schemaError);
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const submitReview = async (event) => {
+    event.preventDefault();
+    if (!rating) { setError('Selecione uma nota de 1 a 5 estrelas.'); return; }
+    // Reserve the user-initiated tab before the async save. It is only navigated
+    // to WhatsApp after Supabase confirms the insert, and closed on failure.
+    const whatsAppWindow = window.open('about:blank', '_blank');
+    if (whatsAppWindow) whatsAppWindow.opener = null;
+    setBusy(true);
+    setError('');
+    try {
+      const result = await onSubmitReview(order, rating, comment.trim());
+      setWhatsAppUrl(result.whatsAppUrl);
+      if (whatsAppWindow) whatsAppWindow.location.href = result.whatsAppUrl;
+    } catch (cause) {
+      whatsAppWindow?.close();
+      setError(cause.message || 'Não foi possível salvar sua avaliação. Tente novamente.');
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  if (review) return <section className="mt-4 rounded-xl border border-emerald-200 bg-emerald-50 p-4" aria-live="polite">
+    <div className="flex items-start gap-2"><CheckCircle2 className="mt-0.5 h-5 w-5 shrink-0 text-emerald-700" /><div><h4 className="text-sm font-bold text-emerald-900">Obrigado por avaliar a Salencar!</h4><p className="mt-1 text-xs text-emerald-800">Sua nota: <span aria-label={`${review.rating} de 5 estrelas`}>{'★'.repeat(review.rating)}{'☆'.repeat(5 - review.rating)}</span> ({review.rating}/5)</p>{review.comment && <p className="mt-2 whitespace-pre-wrap break-words text-xs leading-relaxed text-emerald-900">{review.comment}</p>}</div></div>
+    {whatsAppUrl && <a href={whatsAppUrl} target="_blank" rel="noopener noreferrer" className="mt-3 inline-flex min-h-10 items-center rounded-lg border border-emerald-300 bg-white px-3 text-xs font-semibold text-emerald-800 hover:bg-emerald-100">Abrir avaliação no WhatsApp</a>}
+  </section>;
+
+  if (receipt) return <form onSubmit={submitReview} className="mt-4 space-y-3 rounded-xl border border-primary/15 bg-primary-light/30 p-4">
+    <div><h4 className="text-sm font-bold text-stone-900">Como foi sua experiência?</h4><p className="mt-1 text-xs text-stone-600">Sua opinião ajuda a Salencar a melhorar.</p></div>
+    <div className="flex items-center gap-1" role="group" aria-label="Nota da avaliação">
+      {[1, 2, 3, 4, 5].map((value) => <button key={value} type="button" onClick={() => { setRating(value); setError(''); }} aria-label={`${value} ${value === 1 ? 'estrela' : 'estrelas'}`} aria-pressed={rating === value} className="rounded-md p-1 text-amber-500 transition hover:scale-110 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary"> <Star className={`h-7 w-7 ${value <= rating ? 'fill-amber-400' : 'fill-stone-200 text-stone-300'}`} /></button>)}
+    </div>
+    <label className="block"><span className="sr-only">Comentário (opcional)</span><textarea value={comment} onChange={(event) => setComment(event.target.value)} maxLength={2000} rows={3} placeholder="Conte para nós como foi sua experiência..." className="w-full resize-y rounded-xl border border-stone-200 bg-white px-3 py-2.5 text-sm text-stone-800 outline-none placeholder:text-stone-400 focus:border-primary/50 focus:ring-2 focus:ring-primary/10" /></label>
+    {error && <p role="alert" className="text-xs font-medium text-rose-700">{error}</p>}
+    <button type="submit" disabled={busy || rating < 1} className="inline-flex min-h-11 w-full items-center justify-center gap-2 rounded-xl bg-primary px-4 py-2.5 text-sm font-semibold text-white transition hover:bg-primary-hover disabled:cursor-not-allowed disabled:opacity-50">{busy ? 'Salvando avaliação…' : 'Enviar avaliação'}</button>
+  </form>;
+
+  return <div className="mt-4 rounded-xl border border-emerald-200 bg-emerald-50 p-4">
+    <div className="flex items-start gap-2"><PackageCheck className="mt-0.5 h-5 w-5 shrink-0 text-emerald-700" /><div><h4 className="text-sm font-bold text-emerald-900">Pedido concluído</h4><p className="mt-1 text-xs leading-relaxed text-emerald-800">Confirme quando receber seu pedido para avaliar sua experiência.</p></div></div>
+    {error && <p role="alert" className="mt-3 text-xs font-medium text-rose-700">{error}</p>}
+    <button type="button" disabled={busy} onClick={confirmDelivery} className="mt-3 min-h-11 w-full rounded-xl bg-emerald-700 px-4 py-2.5 text-sm font-semibold text-white transition hover:bg-emerald-800 disabled:opacity-50">{busy ? 'Confirmando…' : 'Confirmar entrega'}</button>
+  </div>;
+}
+
+function TrackingCard({ order, receipt, review, onConfirm, onSubmitReview }) {
   const cancelled = order.status === 'cancelled';
   const stage = ({ confirmed: 0, preparing: 1, out_for_delivery: 2, completed: 3 })[order.status] ?? -1;
   const statusLabel = customerOrderStatus(order.status);
@@ -42,24 +107,106 @@ function TrackingCard({ order }) {
         const current = index === stage && order.status !== 'completed';
         return <li key={id} className="relative flex min-h-12 gap-3 pb-3 last:pb-0"><span className={`relative z-10 flex h-8 w-8 shrink-0 items-center justify-center rounded-full ${done ? 'bg-emerald-100 text-emerald-700' : current ? 'bg-primary text-white' : 'bg-stone-100 text-stone-400'} ${current ? 'animate-pulse' : ''}`}>{done ? <Check className="h-4 w-4" /> : <Icon className="h-4 w-4" />}</span>{index < STEPS.length - 1 && <span aria-hidden="true" className={`absolute left-[15px] top-8 h-[calc(100%-12px)] w-0.5 ${done ? 'bg-emerald-300' : 'bg-stone-200'}`} />}<span className={`min-w-0 pt-1 text-xs ${current ? 'font-bold text-primary' : done ? 'font-medium text-stone-700' : 'text-stone-400'}`}>{label}{current && <span className="ml-2 rounded-full bg-primary-light px-2 py-0.5 text-[9px] font-bold">Agora</span>}</span></li>;
       })}</ol>
+      {order.status === 'completed' && <ReviewExperience key={order.databaseId} order={order} receipt={receipt} review={review} onConfirm={onConfirm} onSubmitReview={onSubmitReview} />}
     </>}
   </article>;
 }
 
 export function OrderTrackingModal({ isOpen, onClose }) {
-  const { currentUser, orders } = useAuth();
+  const { currentUser, orders, settings } = useAuth();
   const customerOrders = useMemo(() => getCustomerOrders(orders, currentUser), [orders, currentUser]);
-  const { active: activeOrders, past: pastOrders } = useMemo(() => splitCustomerOrders(customerOrders), [customerOrders]);
+  const [now, setNow] = useState(Date.now());
+  const [receipts, setReceipts] = useState({});
+  const [reviews, setReviews] = useState({});
+  const [recordsLoading, setRecordsLoading] = useState(false);
+  const [recordsError, setRecordsError] = useState('');
+  const historySectionRef = useRef(null);
+  const { active: activeOrders, past: pastOrders } = useMemo(() => splitCustomerOrders(customerOrders, now), [customerOrders, now]);
+
+  useEffect(() => {
+    const expirations = customerOrders.filter((order) => order.status === 'completed' && order.completedAt).map((order) => new Date(order.completedAt).getTime() + CUSTOMER_COMPLETED_TRACKING_MS).filter(Number.isFinite);
+    let timeout;
+    const updateClockAndSchedule = () => {
+      const currentTime = Date.now();
+      setNow(currentTime);
+      const nextExpiration = expirations.filter((expiry) => expiry > currentTime).sort((a, b) => a - b)[0];
+      if (nextExpiration) timeout = window.setTimeout(updateClockAndSchedule, nextExpiration - currentTime + 20);
+    };
+    updateClockAndSchedule();
+    const onVisibility = () => { if (!document.hidden) updateClockAndSchedule(); };
+    document.addEventListener('visibilitychange', onVisibility);
+    return () => { window.clearTimeout(timeout); document.removeEventListener('visibilitychange', onVisibility); };
+  }, [customerOrders]);
+
+  useEffect(() => {
+    const orderIds = customerOrders.map((order) => order.databaseId).filter(Boolean);
+    if (!isOpen || !orderIds.length || !supabase) {
+      setReceipts({});
+      setReviews({});
+      return undefined;
+    }
+    let active = true;
+    setRecordsLoading(true);
+    setRecordsError('');
+    Promise.all([
+      supabase.from('order_delivery_confirmations').select('order_id, customer_id, confirmed_at').in('order_id', orderIds),
+      supabase.from('order_reviews').select('id, order_id, customer_id, rating, comment, created_at').in('order_id', orderIds),
+    ]).then(([receiptResult, reviewResult]) => {
+      if (!active) return;
+      if (receiptResult.error || reviewResult.error) throw receiptResult.error || reviewResult.error;
+      setReceipts(Object.fromEntries((receiptResult.data || []).map((row) => [row.order_id, row])));
+      setReviews(Object.fromEntries((reviewResult.data || []).map((row) => [row.order_id, row])));
+    }).catch((error) => {
+      if (!active) return;
+      setRecordsError(schemaError);
+      console.error('Order feedback load failed:', { code: error.code, message: error.message });
+    }).finally(() => { if (active) setRecordsLoading(false); });
+    return () => { active = false; };
+  }, [isOpen, currentUser?.id, customerOrders]);
+
+  const confirmDelivery = async (order) => {
+    if (!supabase || !currentUser?.id || order.customerId !== currentUser.id || order.status !== 'completed') throw new Error(schemaError);
+    const { data, error } = await supabase.from('order_delivery_confirmations').insert({ order_id: order.databaseId, customer_id: currentUser.id }).select('order_id, customer_id, confirmed_at').single();
+    if (error) {
+      if (error.code === '23505') {
+        const existing = await supabase.from('order_delivery_confirmations').select('order_id, customer_id, confirmed_at').eq('order_id', order.databaseId).single();
+        if (!existing.error) { setReceipts((previous) => ({ ...previous, [order.databaseId]: existing.data })); return existing.data; }
+      }
+      throw new Error(error.code === '42P01' || error.code === 'PGRST205' ? schemaError : 'Não foi possível confirmar o recebimento. Tente novamente.');
+    }
+    setReceipts((previous) => ({ ...previous, [order.databaseId]: data }));
+    return data;
+  };
+
+  const submitReview = async (order, rating, comment) => {
+    if (!supabase || !currentUser?.id || order.customerId !== currentUser.id || order.status !== 'completed' || !receipts[order.databaseId]) throw new Error('Confirme o recebimento antes de enviar a avaliação.');
+    const { data, error } = await supabase.from('order_reviews').insert({ order_id: order.databaseId, customer_id: currentUser.id, rating, comment }).select('id, order_id, customer_id, rating, comment, created_at').single();
+    if (error) {
+      if (error.code === '23505') throw new Error('Este pedido já recebeu uma avaliação.');
+      throw new Error(error.code === '42P01' || error.code === 'PGRST205' ? schemaError : 'Não foi possível salvar a avaliação. Tente novamente.');
+    }
+    setReviews((previous) => ({ ...previous, [order.databaseId]: data }));
+    const phone = String(settings?.whatsappNumber || STORE_CONFIG.whatsappNumber).replace(/\D/g, '');
+    const commentLine = comment ? `\n\nComentário:\n${comment}` : '';
+    const message = `⭐ NOVA AVALIAÇÃO - SALENCAR\n\nPedido: #${order.id}\nCliente: ${currentUser.name}\nNota: ${'⭐'.repeat(rating)} ${rating}/5${commentLine}\n\nObrigado por escolher a Salencar!`;
+    const whatsAppUrl = `https://wa.me/${phone}?text=${encodeURIComponent(message)}`;
+    return { review: data, whatsAppUrl };
+  };
 
   if (!isOpen || currentUser?.role !== 'customer') return null;
 
   return <div className="fixed inset-0 z-[80] flex items-center justify-center overflow-y-auto bg-stone-950/55 p-3 backdrop-blur-sm" onClick={onClose}>
     <section role="dialog" aria-modal="true" aria-labelledby="tracking-title" className="my-auto max-h-[94dvh] w-full max-w-2xl overflow-y-auto rounded-2xl border border-stone-200 bg-white shadow-elevated" onClick={(event) => event.stopPropagation()}>
       <header className="sticky top-0 z-10 flex items-center justify-between gap-3 border-b border-stone-100 bg-white px-4 py-4 sm:px-6"><div className="min-w-0"><p className="text-[10px] font-bold uppercase tracking-[0.18em] text-primary">Salencar</p><h2 id="tracking-title" className="mt-0.5 text-lg font-bold text-stone-900">Acompanhar pedido</h2><p className="text-xs text-stone-500">Olá, {currentUser.name}. Aqui estão seus pedidos.</p></div><button type="button" onClick={onClose} aria-label="Fechar acompanhamento" className="min-h-10 min-w-10 rounded-full p-2 text-stone-500 hover:bg-stone-100"><X className="h-5 w-5" /></button></header>
-      <div className="space-y-5 p-4 sm:p-6">{!customerOrders.length ? <div className="rounded-2xl bg-stone-50 px-5 py-8 text-center"><span className="mx-auto flex h-12 w-12 items-center justify-center rounded-2xl bg-primary-light text-primary"><PackageCheck className="h-6 w-6" /></span><h3 className="mt-3 text-sm font-bold text-stone-900">Ainda não há pedidos</h3><p className="mt-1 text-xs leading-relaxed text-stone-500">Quando fizer um pedido, poderá acompanhar cada etapa por aqui.</p><button type="button" onClick={() => { onClose(); window.location.hash = '#cardapio'; }} className="mt-4 min-h-11 rounded-xl bg-primary px-4 py-2.5 text-sm font-semibold text-white">Voltar ao cardápio</button></div> : <>
-        {!!activeOrders.length && <section className="space-y-3"><div className="flex items-center justify-between"><h3 className="text-sm font-bold text-stone-900">Em andamento</h3><span className="rounded-full bg-primary-light px-2.5 py-1 text-[10px] font-bold text-primary">{activeOrders.length}</span></div>{activeOrders.map((order) => <TrackingCard key={order.id || order.createdAt} order={order} />)}</section>}
-        {!!pastOrders.length && <section className="space-y-3"><h3 className="text-sm font-bold text-stone-700">Histórico</h3>{pastOrders.map((order) => <TrackingCard key={order.id || order.createdAt} order={order} />)}</section>}
-      </>}</div>
+      <div className="space-y-5 p-4 sm:p-6">
+        {recordsError && <p role="alert" className="rounded-lg bg-amber-50 px-3 py-2 text-xs text-amber-800">{recordsError}</p>}
+        {recordsLoading && <p role="status" className="text-xs text-stone-500">Carregando confirmações e avaliações…</p>}
+        {!customerOrders.length ? <div className="rounded-2xl bg-stone-50 px-5 py-8 text-center"><span className="mx-auto flex h-12 w-12 items-center justify-center rounded-2xl bg-primary-light text-primary"><PackageCheck className="h-6 w-6" /></span><h3 className="mt-3 text-sm font-bold text-stone-900">Ainda não há pedidos</h3><p className="mt-1 text-xs leading-relaxed text-stone-500">Quando fizer um pedido, ele ficará disponível no acompanhamento e no histórico de compras.</p><button type="button" onClick={() => { onClose(); window.location.hash = '#cardapio'; }} className="mt-4 min-h-11 rounded-xl bg-primary px-4 py-2.5 text-sm font-semibold text-white">Voltar ao cardápio</button></div> : <>
+          {!activeOrders.length && !!pastOrders.length && <div className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-stone-200 bg-stone-50 p-4"><div><h3 className="text-sm font-bold text-stone-800">Não há pedidos em andamento</h3><p className="mt-1 text-xs text-stone-500">Você pode consultar seus pedidos anteriores no histórico abaixo.</p></div><button type="button" onClick={() => historySectionRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' })} className="min-h-10 rounded-lg bg-white px-3 text-xs font-semibold text-primary shadow-subtle">Ver histórico</button></div>}
+          {!!activeOrders.length && <section className="space-y-3"><div className="flex items-center justify-between"><h3 className="text-sm font-bold text-stone-900">Em andamento</h3><span className="rounded-full bg-primary-light px-2.5 py-1 text-[10px] font-bold text-primary">{activeOrders.length}</span></div>{activeOrders.map((order) => <TrackingCard key={order.databaseId || order.id || order.createdAt} order={order} receipt={receipts[order.databaseId]} review={reviews[order.databaseId]} onConfirm={confirmDelivery} onSubmitReview={submitReview} />)}</section>}
+          {!!pastOrders.length && <section ref={historySectionRef} className="scroll-mt-4 space-y-3"><h3 className="text-sm font-bold text-stone-700">Histórico de compras</h3>{pastOrders.map((order) => <TrackingCard key={order.databaseId || order.id || order.createdAt} order={order} receipt={receipts[order.databaseId]} review={reviews[order.databaseId]} onConfirm={confirmDelivery} onSubmitReview={submitReview} />)}</section>}
+        </>}
+      </div>
     </section>
   </div>;
 }

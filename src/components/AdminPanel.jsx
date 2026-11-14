@@ -1,13 +1,14 @@
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import {
   ArrowDownRight, ArrowUpRight, BarChart3, Boxes, CalendarDays, Check,
   CircleDollarSign, ClipboardList, ExternalLink, Eye, Filter, LayoutDashboard,
-  LogOut, Mail, Package, Phone, Search, ShieldCheck, ShoppingBag, Users, X,
+  LogOut, Mail, MessageSquareText, Package, Phone, Search, ShieldCheck, ShoppingBag, Star, Users, X,
 } from 'lucide-react';
 import { PRODUCTS } from '../data/products';
 import { useAuth, STOCK_FLAVORS } from '../context/AuthContext';
 import { formatCurrency } from '../utils/formatters';
 import { AdminDeliveryQuote } from './AdminDeliveryQuote';
+import { supabase } from '../lib/supabase';
 
 const NAV = [
   { id: 'dashboard', label: 'Dashboard', icon: LayoutDashboard },
@@ -15,6 +16,7 @@ const NAV = [
   { id: 'inventory', label: 'Estoque', icon: Boxes },
   { id: 'products', label: 'Produtos', icon: Package },
   { id: 'customers', label: 'Clientes', icon: Users },
+  { id: 'reviews', label: 'Avaliações', icon: Star },
 ];
 const PERIODS = [
   { id: 'today', label: 'Hoje', days: 1 }, { id: 'week', label: '1 semana', days: 7 },
@@ -145,7 +147,43 @@ export function AdminPanel({ onClose }) {
   const [feedback, setFeedback] = useState('');
   const [lowStockLimitDraft, setLowStockLimitDraft] = useState(String(inventory.lowStockLimit));
   const [stockDrafts, setStockDrafts] = useState({});
+  const [reviews, setReviews] = useState([]);
+  const [reviewsLoading, setReviewsLoading] = useState(false);
+  const [reviewsError, setReviewsError] = useState('');
   const activeOrders = orders;
+  const refreshReviews = useCallback(async () => {
+    if (!supabase) { setReviewsError('Conexão com Supabase indisponível.'); return; }
+    setReviewsLoading(true);
+    setReviewsError('');
+    try {
+      const { data: reviewRows, error } = await supabase.from('order_reviews').select('id, order_id, customer_id, rating, comment, created_at').order('created_at', { ascending: false });
+      if (error) throw error;
+      const orderIds = [...new Set((reviewRows || []).map((row) => row.order_id))];
+      const customerIds = [...new Set((reviewRows || []).map((row) => row.customer_id))];
+      const [orderResult, profileResult] = await Promise.all([
+        orderIds.length ? supabase.from('orders').select('id, order_number, customer_name').in('id', orderIds) : Promise.resolve({ data: [], error: null }),
+        customerIds.length ? supabase.from('profiles').select('id, display_name, full_name').in('id', customerIds) : Promise.resolve({ data: [], error: null }),
+      ]);
+      if (orderResult.error || profileResult.error) throw orderResult.error || profileResult.error;
+      const orderById = new Map((orderResult.data || []).map((order) => [order.id, order]));
+      const profileById = new Map((profileResult.data || []).map((profile) => [profile.id, profile]));
+      setReviews((reviewRows || []).map((review) => ({
+        ...review,
+        orderNumber: orderById.get(review.order_id)?.order_number || review.order_id,
+        customerName: profileById.get(review.customer_id)?.display_name || profileById.get(review.customer_id)?.full_name || orderById.get(review.order_id)?.customer_name || 'Cliente',
+      })));
+    } catch (error) {
+      setReviewsError('Não foi possível carregar as avaliações. Verifique se a migration correspondente foi aplicada.');
+      console.error('Admin reviews load failed:', { code: error.code, message: error.message });
+    } finally { setReviewsLoading(false); }
+  }, []);
+  useEffect(() => {
+    if (tab !== 'reviews') return undefined;
+    refreshReviews();
+    if (!supabase) return undefined;
+    const channel = supabase.channel('salencar-admin-reviews').on('postgres_changes', { event: '*', schema: 'public', table: 'order_reviews' }, refreshReviews).subscribe();
+    return () => { supabase.removeChannel(channel); };
+  }, [tab, refreshReviews]);
   useEffect(() => setLowStockLimitDraft(String(inventory.lowStockLimit)), [inventory.lowStockLimit]);
   useEffect(() => {
     if (!selectedOrder) return;
@@ -348,6 +386,13 @@ export function AdminPanel({ onClose }) {
 
         <div className="flex-none p-3 pb-6 sm:p-5 sm:pb-8 md:min-h-0 md:flex-1 md:overflow-y-auto md:p-6 lg:p-8">
           {feedback && <div role="status" className="mb-4 inline-flex items-center gap-2 rounded-xl border border-emerald-200 bg-emerald-50 px-3 py-2 text-xs font-semibold text-emerald-800"><Check className="h-4 w-4" />{feedback}</div>}
+
+          {tab === 'reviews' && <div className="space-y-4">
+            <div className="flex flex-wrap items-end justify-between gap-3"><div><h2 className="text-xl font-bold text-stone-900">Avaliações dos clientes</h2><p className="mt-1 text-xs text-stone-500">Notas e comentários enviados após a confirmação de entrega.</p></div><button type="button" onClick={refreshReviews} disabled={reviewsLoading} className="min-h-10 rounded-lg border border-stone-200 bg-white px-3 text-xs font-semibold text-stone-700 hover:bg-stone-50 disabled:opacity-50">{reviewsLoading ? 'Atualizando…' : 'Atualizar'}</button></div>
+            {reviewsError && <div role="alert" className="flex flex-col justify-between gap-3 rounded-xl border border-rose-200 bg-rose-50 p-3 text-xs text-rose-800 sm:flex-row sm:items-center"><span>{reviewsError}</span><button type="button" onClick={refreshReviews} className="min-h-10 shrink-0 rounded-lg bg-white px-3 font-semibold">Tentar novamente</button></div>}
+            <div className="grid gap-3 sm:grid-cols-2"><MetricCard label="Média geral" value={reviews.length ? `${(reviews.reduce((sum, review) => sum + review.rating, 0) / reviews.length).toFixed(1).replace('.', ',')} / 5` : '—'} note="Considerando todas as avaliações" icon={Star} tone="amber" /><MetricCard label="Avaliações recebidas" value={reviews.length} note="Total registrado no Supabase" icon={MessageSquareText} tone="blue" /></div>
+            {reviewsLoading && !reviews.length ? <p role="status" className="py-8 text-center text-xs text-stone-500">Carregando avaliações…</p> : reviews.length ? <div className="grid gap-3 lg:grid-cols-2">{reviews.map((review) => <article key={review.id} className="min-w-0 rounded-2xl border border-stone-200 bg-white p-4 shadow-subtle sm:p-5"><header className="flex flex-wrap items-start justify-between gap-3"><div className="min-w-0"><h3 className="break-words text-sm font-bold text-stone-900">{review.customerName}</h3><p className="mt-1 break-all text-[11px] text-stone-500">Pedido #{review.orderNumber}</p></div><span className="shrink-0 rounded-lg bg-amber-50 px-2.5 py-1.5 text-xs font-bold text-amber-800"><span aria-label={`${review.rating} de 5 estrelas`}>{'★'.repeat(review.rating)}{'☆'.repeat(5 - review.rating)}</span> {review.rating}/5</span></header><p className="mt-3 whitespace-pre-wrap break-words text-sm leading-relaxed text-stone-700">{review.comment || 'Sem comentário.'}</p><p className="mt-4 border-t border-stone-100 pt-3 text-[11px] text-stone-400">{dateTime(review.created_at)}</p></article>)}</div> : !reviewsError && <div className="rounded-2xl border border-dashed border-stone-300 bg-white px-5 py-12 text-center"><Star className="mx-auto h-8 w-8 text-stone-300" /><p className="mt-3 text-sm font-semibold text-stone-700">Ainda não há avaliações</p><p className="mt-1 text-xs text-stone-500">As avaliações enviadas pelos clientes aparecerão aqui.</p></div>}
+          </div>}
 
           {tab === 'dashboard' && <div className="space-y-5">
             <div className="flex flex-col justify-between gap-3 sm:flex-row sm:items-end"><div><h2 className="text-xl font-bold text-stone-900">Visão geral</h2><p className="mt-1 text-xs text-stone-500">Indicadores e vendas do período selecionado.</p></div><div className="flex flex-wrap items-center gap-2"><label className="relative"><CalendarDays className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-stone-400" /><select value={period} onChange={(event) => setPeriod(event.target.value)} className="rounded-xl border border-stone-200 bg-white py-2.5 pl-9 pr-3 text-xs font-semibold text-stone-700 outline-none focus:border-primary/40">{PERIODS.map((item) => <option key={item.id} value={item.id}>{item.label}</option>)}</select></label></div></div>

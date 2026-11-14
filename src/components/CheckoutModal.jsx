@@ -124,7 +124,7 @@ export function CheckoutModal({ onOrderSuccess, onRequestAuth }) {
     }
     const address = addresses.find((entry) => entry.id === id);
     if (!address) return;
-    setFormData((previous) => ({ ...previous, name: address.recipient_name || previous.name, phone: address.phone ? formatPhone(address.phone) : previous.phone, cep: address.postal_code || '', street: address.street || '', number: address.number || '', complement: address.complement || '', neighborhood: address.neighborhood || '', city: address.city || '', reference: address.reference || '' }));
+    setFormData((previous) => ({ ...previous, phone: address.phone ? formatPhone(address.phone) : previous.phone, cep: address.postal_code || '', street: address.street || '', number: address.number || '', complement: address.complement || '', neighborhood: address.neighborhood || '', city: address.city || '', reference: address.reference || '' }));
     setSaveAddressForNext(false);
   };
 
@@ -174,7 +174,7 @@ export function CheckoutModal({ onOrderSuccess, onRequestAuth }) {
   };
 
   const paymentLabel = { pix: 'Pix', money: 'Dinheiro', credit: 'Cartão de crédito', debit: 'Cartão de débito' }[formData.paymentMethod];
-  const buildWhatsAppMessage = (orderId) => {
+  const buildWhatsAppMessage = (orderId, displayName = formData.name) => {
     const products = items.map((item) => {
       const details = [item.base?.name, ...(item.extras || []).map((extra) => `Adicional: ${extra.name}`)].filter(Boolean);
       return `• ${item.quantity}x ${item.product.name}${details.length ? ` (${details.join(', ')})` : ''}\n  ${formatCurrency(item.totalPrice)}${item.notes ? `\n  Obs.: ${item.notes}` : ''}`;
@@ -188,7 +188,7 @@ export function CheckoutModal({ onOrderSuccess, onRequestAuth }) {
         ? `\nTroco para ${formatCurrency(Number(formData.changeFor.replace(',', '.')))} (o total final depende da cotação da entrega)`
         : '\nSem necessidade de troco (valor exato)';
     const itemNotes = formData.orderNotes.trim() ? `\nObservações do pedido: ${formData.orderNotes.trim()}` : '';
-    return `NOVO PEDIDO — ${settings.name}\n${orderId ? `Pedido: ${orderId}\n` : ''}\nCliente: ${formData.name.trim()}\nE-mail: ${currentUser.email}\nWhatsApp: ${formData.phone.trim()}\n\nENDEREÇO\n${address}\n\nITENS\n${products}\n\nSubtotal dos produtos: ${formatCurrency(subtotal)}\nEntrega: ${deliveryType === 'pickup' ? 'Retirada no local' : 'Aguardando cotação da loja'}\n${deliveryType === 'delivery' ? 'Total final: será informado após a cotação e enviado para aprovação.' : `Total: ${formatCurrency(subtotal)}`}\n\nPagamento: ${paymentLabel}${changeInfo}${formData.paymentMethod === 'pix' ? `\nChave Pix: ${settings.pix.key}` : ''}${itemNotes}\n\nAgradeço pela preferência!`;
+    return `NOVO PEDIDO — ${settings.name}\n${orderId ? `Pedido: ${orderId}\n` : ''}\nCliente: ${displayName.trim()}\nE-mail: ${currentUser.email}\nWhatsApp: ${formData.phone.trim()}\n\nENDEREÇO\n${address}\n\nITENS\n${products}\n\nSubtotal dos produtos: ${formatCurrency(subtotal)}\nEntrega: ${deliveryType === 'pickup' ? 'Retirada no local' : 'Aguardando cotação da loja'}\n${deliveryType === 'delivery' ? 'Total final: será informado após a cotação e enviado para aprovação.' : `Total: ${formatCurrency(subtotal)}`}\n\nPagamento: ${paymentLabel}${changeInfo}${formData.paymentMethod === 'pix' ? `\nChave Pix: ${settings.pix.key}` : ''}${itemNotes}\n\nAgradeço pela preferência!`;
   };
 
   const handleFinishOrder = async (event) => {
@@ -242,10 +242,10 @@ export function CheckoutModal({ onOrderSuccess, onRequestAuth }) {
       if (!result?.ok) throw new Error(result?.error || 'Não foi possível registrar o pedido.');
       const savedOrder = result.order;
       try { sessionStorage.removeItem(idempotency.storageKey); } catch { /* order was saved; storage cleanup is optional */ }
-      const message = buildWhatsAppMessage(savedOrder.id);
+      const message = buildWhatsAppMessage(savedOrder.id, savedOrder.customerName);
       const whatsappUrl = `https://wa.me/${settings.whatsappNumber}?text=${encodeURIComponent(message)}`;
       if (whatsappWindow) whatsappWindow.location.href = whatsappUrl;
-      onOrderSuccess?.({ customer: formData.name, phone: formData.phone, items: [...items], subtotal, total, deliveryType, whatsappUrl, message, paymentMethod: formData.paymentMethod, orderId: savedOrder.id });
+      onOrderSuccess?.({ customer: savedOrder.customerName, phone: formData.phone, items: [...items], subtotal, total, deliveryType, whatsappUrl, message, paymentMethod: formData.paymentMethod, orderId: savedOrder.id });
       notify({ type: 'success', title: 'Pedido registrado', message: deliveryType === 'delivery' ? 'A loja vai calcular a entrega e enviar o valor para sua aprovação.' : 'Seu pedido foi enviado para a loja.' });
       clearCart();
       closeCheckout();
@@ -296,7 +296,7 @@ export function CheckoutModal({ onOrderSuccess, onRequestAuth }) {
               <section className="space-y-4 border-t border-stone-100 pt-5">
                 <h3 className="font-semibold text-stone-900">Seus dados</h3>
                 <div className="grid gap-4 sm:grid-cols-2">
-                  <CheckoutField label="Nome completo *" field="name" value={formData.name} onChange={(value) => change('name', value)} error={formErrors.name} inputClass={inputClass('name')} autoComplete="name" placeholder="Seu nome" />
+                  <CheckoutField label="Nome de exibição" field="name" value={formData.name} onChange={(value) => change('name', value)} error={formErrors.name} inputClass={`${inputClass('name')} bg-stone-50`} autoComplete="name" readOnly placeholder="Seu nome" />
                   <CheckoutField label="Telefone / WhatsApp *" field="phone" type="tel" value={formData.phone} onChange={(value) => change('phone', value)} error={formErrors.phone} inputClass={inputClass('phone')} autoComplete="tel" placeholder="(11) 99999-9999" />
                 </div>
               </section>

@@ -6,7 +6,7 @@ O frontend usa Supabase Auth e tabelas protegidas por RLS para perfis, endereço
 
 1. Crie um projeto no [Supabase](https://supabase.com/dashboard).
 2. Abra **SQL Editor → New query**, cole o conteúdo de `supabase/migrations/20261107000000_customer_accounts_orders.sql` e execute.
-3. Execute também, nesta ordem, `supabase/migrations/20261107120000_ensure_customer_profile.sql`, `supabase/migrations/20261107130000_admin_access_hardening.sql`, `supabase/migrations/20261107150000_delivery_quote_flow.sql`, `supabase/migrations/20261110160000_authoritative_catalog_orders.sql` e `supabase/migrations/20261111120000_admin_dashboard_inventory.sql`, e, por fim, `supabase/migrations/20261113120000_order_idempotency_and_availability.sql`.
+3. Execute também, nesta ordem, `supabase/migrations/20261107120000_ensure_customer_profile.sql`, `supabase/migrations/20261107130000_admin_access_hardening.sql`, `supabase/migrations/20261107150000_delivery_quote_flow.sql`, `supabase/migrations/20261110160000_authoritative_catalog_orders.sql` e `supabase/migrations/20261111120000_admin_dashboard_inventory.sql`, `supabase/migrations/20261113120000_order_idempotency_and_availability.sql` e, por fim, `supabase/migrations/20261113130000_customer_display_name.sql`.
 4. Confira em **Table Editor** se foram criadas `profiles`, `addresses`, `customer_preferences`, `catalog_products`, `inventory_settings`, `inventory_items`, `orders` e `order_items` e se RLS está ativa.
 
 Se a migration base já foi aplicada no projeto, não a execute novamente; aplique apenas as migrations posteriores que ainda não constarem no histórico do Supabase.
@@ -15,8 +15,9 @@ A função `create_customer_order_idempotent` serializa retentativas pela chave 
 
 A migration `20261111120000_admin_dashboard_inventory.sql` adiciona custo privado por produto para estimativas de lucro, disponibilidade do cardápio, estoque persistido e funções administrativas protegidas. O Dashboard usa apenas pedidos reais do Supabase; o lucro fica indisponível enquanto faltar custo de algum produto vendido no período. O estoque começa em zero e o controle automático começa desligado: informe os saldos reais no painel antes de ativar a baixa automática. Quando ativado, a baixa ocorre uma única vez na confirmação, é validada contra pedidos simultâneos e é devolvida uma única vez se um pedido confirmado for cancelado.
 
-Aplique `20261113120000_order_idempotency_and_availability.sql` depois das migrations de catálogo e estoque. Ela adiciona idempotência ao checkout e recusa produtos pausados ou indisponíveis. Confirme a RPC com `select has_function_privilege('authenticated', 'public.create_customer_order_idempotent(jsonb,jsonb,uuid)', 'EXECUTE');` e confirme a migration no histórico do projeto antes de testar pedidos.
+Aplique `20261113120000_order_idempotency_and_availability.sql` depois das migrations de catálogo e estoque. Ela habilita a RPC de checkout idempotente e deve estar aplicada antes da versão atual do frontend.
 
+A migration `20261113130000_customer_display_name.sql` adiciona `profiles.display_name`, separado do nome sincronizado pelo provedor OAuth. O valor escolhido pelo cliente prevalece no perfil, na lista administrativa de clientes, no checkout e nos pedidos futuros. A coluna segue a política RLS de atualização do próprio perfil e não permite que o cliente altere seu papel. Aplique-a após as migrations anteriores e confirme a existência da coluna no Table Editor.
 ## 2. Criar a conta administrativa
 
 Crie seu usuário administrativo em **Authentication → Users**, com seu próprio e-mail, senha forte e e-mail confirmado. A migration de hardening remove a promoção por e-mail da versão antiga; depois de executá-la, copie o UUID do administrador e execute a concessão manual abaixo no SQL Editor como operador do projeto:

@@ -115,11 +115,13 @@ function formatAddress(address = {}) {
   return [street, extra, address.postal_code ? `CEP ${address.postal_code}` : '', address.reference ? `Ref.: ${address.reference}` : ''].filter(Boolean).join(' — ');
 }
 function mapOrder(row) {
-  return { id: row.order_number, databaseId: row.id, customerId: row.customer_id, customerName: row.customer_name, customerEmail: row.customer_email, phone: row.phone, status: row.status, subtotal: Number(row.subtotal), deliveryFee: Number(row.delivery_fee), deliveryQuote: row.delivery_quote == null ? null : Number(row.delivery_quote), deliveryQuoteAt: row.delivery_quote_at, deliveryQuoteBy: row.delivery_quote_by, deliveryQuoteResponse: row.delivery_quote_response, deliveryQuoteRespondedAt: row.delivery_quote_responded_at, total: Number(row.total), deliveryType: row.delivery_type, address: formatAddress(row.address_snapshot), addressSnapshot: row.address_snapshot, paymentMethod: paymentLabel(row.payment_method), paymentMethodId: row.payment_method, orderNotes: row.order_notes, createdAt: row.created_at, updatedAt: row.updated_at, items: (row.order_items || []).map((item) => ({ productId: item.product_id, productName: item.product_name, productImage: item.product_image, baseId: item.base_id, option: item.option, extras: item.extras || [], quantity: item.quantity, unitPrice: Number(item.unit_price), totalPrice: Number(item.total_price) })) };
+  return { id: row.order_number, databaseId: row.id, customerId: row.customer_id, customerName: row.customer_name, customerEmail: row.customer_email, phone: row.phone, status: row.status, completedAt: row.completed_at || null, subtotal: Number(row.subtotal), deliveryFee: Number(row.delivery_fee), deliveryQuote: row.delivery_quote == null ? null : Number(row.delivery_quote), deliveryQuoteAt: row.delivery_quote_at, deliveryQuoteBy: row.delivery_quote_by, deliveryQuoteResponse: row.delivery_quote_response, deliveryQuoteRespondedAt: row.delivery_quote_responded_at, total: Number(row.total), deliveryType: row.delivery_type, address: formatAddress(row.address_snapshot), addressSnapshot: row.address_snapshot, paymentMethod: paymentLabel(row.payment_method), paymentMethodId: row.payment_method, orderNotes: row.order_notes, createdAt: row.created_at, updatedAt: row.updated_at, items: (row.order_items || []).map((item) => ({ productId: item.product_id, productName: item.product_name, productImage: item.product_image, baseId: item.base_id, option: item.option, extras: item.extras || [], quantity: item.quantity, unitPrice: Number(item.unit_price), totalPrice: Number(item.total_price) })) };
 }
 
 export function AuthProvider({ children }) {
   const [currentUser, setCurrentUser] = useState(null);
+  const [needsDisplayNameSetup, setNeedsDisplayNameSetup] = useState(false);
+  const [displayNameSuggestion, setDisplayNameSuggestion] = useState('');
   const [authLoading, setAuthLoading] = useState(true);
   const [authError, setAuthError] = useState('');
   const [passwordRecoveryPending, setPasswordRecoveryPending] = useState(false);
@@ -235,11 +237,11 @@ export function AuthProvider({ children }) {
     setCustomersError('');
     try {
       const result = await withTimeout(
-        supabase.from('profiles').select('id,full_name,email,phone,created_at,role').eq('role', 'customer').order('created_at', { ascending: false }),
+        supabase.from('profiles').select('id,full_name,display_name,email,phone,created_at,role').eq('role', 'customer').order('created_at', { ascending: false }),
         'A consulta de clientes excedeu o tempo limite.'
       );
       if (result.error) throw result.error;
-      setUsers((result.data || []).map((person) => ({ id: person.id, name: person.full_name, email: person.email, phone: person.phone, createdAt: person.created_at, role: person.role })));
+      setUsers((result.data || []).map((person) => ({ id: person.id, name: person.display_name || person.full_name, email: person.email, phone: person.phone, createdAt: person.created_at, role: person.role })));
       return { ok: true };
     } catch (error) {
       setCustomersError('Não foi possível carregar os clientes do Supabase. Verifique a conexão e tente novamente.');
@@ -257,7 +259,7 @@ export function AuthProvider({ children }) {
 
   const loadAccountData = useCallback(async (authUser, canCommit = () => true) => {
     if (!authUser || !supabase) {
-      if (canCommit()) { setCurrentUser(null); setAddresses([]); setOrders([]); setOrdersLoading(false); setOrdersError(''); setUsers([]); }
+      if (canCommit()) { setCurrentUser(null); setNeedsDisplayNameSetup(false); setDisplayNameSuggestion(''); setAddresses([]); setOrders([]); setOrdersLoading(false); setOrdersError(''); setUsers([]); }
       return null;
     }
     // OAuth can return a valid Auth user even when an older/missing DB trigger
@@ -269,9 +271,14 @@ export function AuthProvider({ children }) {
     const { data: profile, error: profileError } = await withTimeout(supabase.from('profiles').select('*').eq('id', authUser.id).maybeSingle(), 'A consulta do perfil excedeu o tempo limite.');
     if (profileError) throw profileError;
     if (!profile) throw new Error('Não foi possível criar o perfil da conta. Aplique as migrations atuais do Supabase e tente novamente.');
-    const user = { id: authUser.id, name: profile.full_name || authUser.user_metadata?.full_name || authUser.user_metadata?.name || authUser.email?.split('@')[0] || authUser.phone || '', email: profile.email || authUser.email || '', phone: profile.phone || authUser.phone || '', role: profile.role, createdAt: profile.created_at, avatarUrl: authUser.user_metadata?.avatar_url || authUser.user_metadata?.picture || '' };
+    const displayName = String(profile.display_name || '').trim();
+    const googleSuggestion = String(authUser.user_metadata?.full_name || authUser.user_metadata?.name || '').trim();
+    const isGoogleCustomer = profile.role === 'customer' && (authUser.app_metadata?.provider === 'google' || authUser.identities?.some((identity) => identity.provider === 'google'));
+    const user = { id: authUser.id, name: displayName || profile.full_name || authUser.user_metadata?.full_name || authUser.user_metadata?.name || authUser.email?.split('@')[0] || authUser.phone || '', displayName, email: profile.email || authUser.email || '', phone: profile.phone || authUser.phone || '', role: profile.role, createdAt: profile.created_at, avatarUrl: authUser.user_metadata?.avatar_url || authUser.user_metadata?.picture || '' };
     if (!canCommit()) return user;
     setCurrentUser(user);
+    setNeedsDisplayNameSetup(Boolean(isGoogleCustomer && !displayName));
+    setDisplayNameSuggestion(googleSuggestion);
     setAuthError('');
     // A valid session and role are enough to render the protected shell. Orders,
     // preferences and other sections load independently and have their own errors.
@@ -338,7 +345,7 @@ export function AuthProvider({ children }) {
       if (event === 'INITIAL_SESSION') return;
       if (event === 'PASSWORD_RECOVERY') setPasswordRecoveryPending(true);
       const eventVersion = ++authEventVersion;
-      if (!session) { setCurrentUser(null); setAddresses([]); setOrders([]); setOrdersLoading(false); setOrdersError(''); setUsers([]); setCustomersError(''); setPasswordRecoveryPending(false); setAuthError(''); setAuthLoading(false); return; }
+      if (!session) { setCurrentUser(null); setNeedsDisplayNameSetup(false); setDisplayNameSuggestion(''); setAddresses([]); setOrders([]); setOrdersLoading(false); setOrdersError(''); setUsers([]); setCustomersError(''); setPasswordRecoveryPending(false); setAuthError(''); setAuthLoading(false); return; }
       setAuthError('');
       setAuthLoading(true);
       window.setTimeout(() => loadAccountData(session.user, () => active && eventVersion === authEventVersion).catch((error) => {
@@ -489,16 +496,26 @@ export function AuthProvider({ children }) {
   }, [currentUser?.id]);
   const updateCustomerProfile = useCallback(async (changes) => {
     if (!currentUser || currentUser.role !== 'customer') return { ok: false, error: 'Entre na sua conta para editar os dados.' };
-    const profile = { full_name: changes.name?.trim() ?? currentUser.name, phone: changes.phone?.trim() ?? currentUser.phone ?? '' };
-    if (profile.full_name.length < 2) return { ok: false, error: 'Informe seu nome completo.' };
+    const displayName = String(changes.name ?? currentUser.displayName ?? currentUser.name ?? '').trim();
+    const profile = { display_name: displayName, full_name: displayName, phone: changes.phone?.trim() ?? currentUser.phone ?? '' };
+    if (!displayName) return { ok: false, error: 'Informe como devemos chamar você.' };
+    if (displayName.length > 80) return { ok: false, error: 'O nome deve ter no máximo 80 caracteres.' };
     const { error } = await supabase.from('profiles').update(profile).eq('id', currentUser.id);
-    if (error) return { ok: false, error: error.message };
-    setCurrentUser((previous) => previous?.id === currentUser.id ? { ...previous, name: profile.full_name, phone: profile.phone } : previous);
-    return { ok: true, user: { ...currentUser, name: profile.full_name, phone: profile.phone } };
+    if (error) {
+      console.error('Supabase customer profile update failed:', { code: error.code, message: error.message });
+      const migrationMissing = ['42703', 'PGRST204'].includes(error.code);
+      return { ok: false, error: migrationMissing ? 'O banco precisa da migration de nome de exibição. Aplique 20261113130000_customer_display_name.sql e tente novamente.' : 'Não foi possível salvar seu nome. Confira sua conexão e tente novamente.' };
+    }
+    const updatedUser = { ...currentUser, name: displayName, displayName, phone: profile.phone };
+    setCurrentUser((previous) => previous?.id === currentUser.id ? updatedUser : previous);
+    setNeedsDisplayNameSetup(false);
+    setDisplayNameSuggestion('');
+    return { ok: true, user: updatedUser };
   }, [currentUser]);
 
   const recordOrder = useCallback(async (order) => {
     if (!currentUser || currentUser.role !== 'customer') return { ok: false, error: 'Entre em uma conta de cliente para registrar o pedido.' };
+    if (needsDisplayNameSetup) return { ok: false, error: 'Confirme seu nome de exibição para continuar com o pedido.' };
     if (!supabase) return { ok: false, error: getSupabaseConfigError() };
     const { data: catalog, error: catalogError } = await supabase.from('catalog_products').select('product_id').limit(1);
     if (catalogError) {
@@ -513,7 +530,9 @@ export function AuthProvider({ children }) {
       return { ok: false, error: 'O cat\u00e1logo da loja est\u00e1 vazio. A loja precisa revisar a configura\u00e7\u00e3o do card\u00e1pio no Supabase.' };
     }
     const paymentId = order.paymentMethodId || ({ Pix: 'pix', Dinheiro: 'money', 'Cartão de crédito': 'credit', 'Cartão de débito': 'debit' })[order.paymentMethod];
-    const profileResult = await updateCustomerProfile({ name: order.customerName || currentUser.name, phone: order.phone });
+    const customerName = String(currentUser.displayName || currentUser.name || '').trim();
+    if (!customerName) return { ok: false, error: 'Salve seu nome de exibição antes de finalizar o pedido.' };
+    const profileResult = await updateCustomerProfile({ name: customerName, phone: order.phone });
     if (!profileResult.ok) return profileResult;
     if (order.deliveryType === 'delivery' && order.saveAddress) {
       const addressResult = await saveAddress({ ...order.addressSnapshot, recipient_name: order.customerName || currentUser.name, phone: order.phone, is_default: order.makeDefaultAddress || addresses.length === 0 });
@@ -522,7 +541,7 @@ export function AuthProvider({ children }) {
     const preferenceResult = await savePaymentPreference(paymentId);
     if (!preferenceResult.ok) return preferenceResult;
     const { data, error } = await supabase.rpc('create_customer_order_idempotent', {
-      p_order: { customer_name: order.customerName || currentUser.name, phone: order.phone, subtotal: order.subtotal, delivery_fee: order.deliveryFee, total: order.total, delivery_type: order.deliveryType, address_snapshot: order.addressSnapshot || {}, payment_method: paymentId, order_notes: order.orderNotes || '' },
+      p_order: { customer_name: customerName, phone: order.phone, subtotal: order.subtotal, delivery_fee: order.deliveryFee, total: order.total, delivery_type: order.deliveryType, address_snapshot: order.addressSnapshot || {}, payment_method: paymentId, order_notes: order.orderNotes || '' },
       p_items: order.items.map((item) => ({ product_id: item.productId, product_name: item.productName, product_image: item.productImage || '', base_id: item.baseId || '', option: item.option || '', extras: item.extras || [], quantity: item.quantity, unit_price: item.unitPrice, total_price: item.totalPrice })),
       p_idempotency_key: order.idempotencyKey,
     });
@@ -538,10 +557,10 @@ export function AuthProvider({ children }) {
           : 'N\u00e3o foi poss\u00edvel registrar o pedido agora. Confira sua conex\u00e3o e tente novamente.',
       };
     }
-    const savedOrder = { ...order, id: data.order_number, databaseId: data.id, customerId: currentUser.id, customerName: order.customerName || currentUser.name, customerEmail: currentUser.email, createdAt: data.created_at, status: data.status, address: formatAddress(order.addressSnapshot), addressSnapshot: order.addressSnapshot || {}, paymentMethodId: paymentId };
+    const savedOrder = { ...order, id: data.order_number, databaseId: data.id, customerId: currentUser.id, customerName: data.customer_name || customerName, customerEmail: currentUser.email, createdAt: data.created_at, status: data.status, address: formatAddress(order.addressSnapshot), addressSnapshot: order.addressSnapshot || {}, paymentMethodId: paymentId };
     setOrders((previous) => dedupeOrders([savedOrder, ...previous]));
     return { ok: true, order: savedOrder };
-  }, [currentUser, updateCustomerProfile, saveAddress, savePaymentPreference, addresses.length]);
+  }, [currentUser, needsDisplayNameSetup, updateCustomerProfile, saveAddress, savePaymentPreference, addresses.length]);
 
   const saveDeliveryQuote = useCallback(async (orderId, deliveryQuote) => {
     if (!currentUser || currentUser.role !== 'admin') return { ok: false, error: 'Somente administradores podem salvar cotações.' };
@@ -632,7 +651,7 @@ const updateProductSetting = useCallback(async (productId, changes) => {
     return { ok: true };
   }, [currentUser?.role]);
 const updateStoreSettings = useCallback((changes) => setSettings((previous) => ({ ...previous, ...changes, pix: changes.pix ? { ...previous.pix, ...changes.pix } : previous.pix, status: changes.status ? { ...previous.status, ...changes.status } : previous.status })), []);
-  const value = useMemo(() => ({ users, currentUser, authLoading, authError, passwordRecoveryPending, addresses, paymentPreference, orders, ordersLoading, ordersError, refreshOrders, customersLoading, customersError, refreshCustomers, productSettings, catalogLoading, catalogError, costsError, refreshCatalog, settings, inventory, inventoryLoading, inventoryError, refreshAdminInventory, login, loginAdmin, verifyAdminAuthorization, verifyCustomerSession, register, verifyEmailCode, resendSignupCode, resetPassword, verifyRecoveryCode, updatePassword, loginWithGoogle, logout, recordOrder, updateOrderStatus, saveDeliveryQuote, respondToDeliveryQuote, updateProductSetting, updateStoreSettings, updateInventorySettings, updateFlavorStock, stockAvailability, canFulfillItems, updateCustomerProfile, saveAddress, deleteAddress, savePaymentPreference }), [users, currentUser, authLoading, authError, passwordRecoveryPending, addresses, paymentPreference, orders, ordersLoading, ordersError, refreshOrders, customersLoading, customersError, refreshCustomers, productSettings, catalogLoading, catalogError, costsError, refreshCatalog, settings, inventory, inventoryLoading, inventoryError, refreshAdminInventory, login, loginAdmin, verifyAdminAuthorization, verifyCustomerSession, register, verifyEmailCode, resendSignupCode, resetPassword, verifyRecoveryCode, updatePassword, loginWithGoogle, logout, recordOrder, updateOrderStatus, saveDeliveryQuote, respondToDeliveryQuote, updateProductSetting, updateStoreSettings, updateInventorySettings, updateFlavorStock, stockAvailability, canFulfillItems, updateCustomerProfile, saveAddress, deleteAddress, savePaymentPreference]);
+  const value = useMemo(() => ({ users, currentUser, needsDisplayNameSetup, displayNameSuggestion, authLoading, authError, passwordRecoveryPending, addresses, paymentPreference, orders, ordersLoading, ordersError, refreshOrders, customersLoading, customersError, refreshCustomers, productSettings, catalogLoading, catalogError, costsError, refreshCatalog, settings, inventory, inventoryLoading, inventoryError, refreshAdminInventory, login, loginAdmin, verifyAdminAuthorization, verifyCustomerSession, register, verifyEmailCode, resendSignupCode, resetPassword, verifyRecoveryCode, updatePassword, loginWithGoogle, logout, recordOrder, updateOrderStatus, saveDeliveryQuote, respondToDeliveryQuote, updateProductSetting, updateStoreSettings, updateInventorySettings, updateFlavorStock, stockAvailability, canFulfillItems, updateCustomerProfile, saveAddress, deleteAddress, savePaymentPreference }), [users, currentUser, needsDisplayNameSetup, displayNameSuggestion, authLoading, authError, passwordRecoveryPending, addresses, paymentPreference, orders, ordersLoading, ordersError, refreshOrders, customersLoading, customersError, refreshCustomers, productSettings, catalogLoading, catalogError, costsError, refreshCatalog, settings, inventory, inventoryLoading, inventoryError, refreshAdminInventory, login, loginAdmin, verifyAdminAuthorization, verifyCustomerSession, register, verifyEmailCode, resendSignupCode, resetPassword, verifyRecoveryCode, updatePassword, loginWithGoogle, logout, recordOrder, updateOrderStatus, saveDeliveryQuote, respondToDeliveryQuote, updateProductSetting, updateStoreSettings, updateInventorySettings, updateFlavorStock, stockAvailability, canFulfillItems, updateCustomerProfile, saveAddress, deleteAddress, savePaymentPreference]);
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;
 }
 

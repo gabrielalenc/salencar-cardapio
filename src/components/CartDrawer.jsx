@@ -17,7 +17,6 @@ export function CartDrawer() {
     openCheckout
   } = useCart();
   const { confirm } = useNotifications();
-
   const confirmRemove = async (item) => {
     const accepted = await confirm({ title: 'Remover produto?', message: `Deseja remover ${item.product.name} da sacola?`, confirmLabel: 'Remover', destructive: true });
     if (accepted) removeFromCart(item.cartKey);
@@ -36,17 +35,15 @@ export function CartDrawer() {
     return () => document.removeEventListener('keydown', handleKeyDown);
   }, [isCartOpen, closeCart]);
 
-  if (!isCartOpen) return null;
-
   return (
-    <div className="fixed inset-0 z-50 overflow-hidden" role="dialog" aria-modal="true" aria-labelledby="cart-drawer-title">
+    <div className={`cart-drawer-shell fixed inset-0 z-50 overflow-hidden ${isCartOpen ? 'cart-drawer-shell--open' : 'cart-drawer-shell--closed'}`} role="dialog" aria-modal="true" aria-labelledby="cart-drawer-title" aria-hidden={!isCartOpen}>
       {/* Backdrop */}
       <div
         onClick={closeCart}
-        className="absolute inset-0 bg-stone-950/45 backdrop-blur-sm transition-opacity duration-200"
+        className="cart-drawer-backdrop absolute inset-0 bg-stone-950/45"
       />
 
-      <div className="absolute inset-y-0 right-0 z-10 flex w-[90vw] sm:w-[80vw]">
+      <div className="cart-drawer-panel absolute inset-y-0 right-0 z-10 flex">
         <div className="flex min-w-0 w-full flex-col border-l border-white/60 bg-white shadow-[-18px_0_48px_rgba(36,28,32,0.18)]">
           
           {/* Header */}

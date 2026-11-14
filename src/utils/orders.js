@@ -5,7 +5,7 @@ export const CUSTOMER_ORDER_STATUS = {
   confirmed: 'Pedido confirmado',
   preparing: 'Em preparação',
   out_for_delivery: 'Saiu para entrega',
-  completed: 'Concluído',
+  completed: 'Pedido concluído',
   quote_rejected: 'Cotação recusada',
   cancelled: 'Cancelado',
 };
@@ -34,11 +34,18 @@ export function getCustomerOrders(orders, customer) {
     .sort((a, b) => new Date(b.createdAt || 0) - new Date(a.createdAt || 0));
 }
 
-export function splitCustomerOrders(orders) {
+export const CUSTOMER_COMPLETED_TRACKING_MS = 5 * 60 * 1000;
+
+export function splitCustomerOrders(orders, now = Date.now()) {
   const all = dedupeOrders(orders);
+  const isRecentlyCompleted = (order) => {
+    if (order.status !== 'completed' || !order.completedAt) return false;
+    const completedAt = new Date(order.completedAt).getTime();
+    return Number.isFinite(completedAt) && now < completedAt + CUSTOMER_COMPLETED_TRACKING_MS;
+  };
   return {
-    active: all.filter((order) => !['completed', 'cancelled'].includes(order.status)),
-    past: all.filter((order) => ['completed', 'quote_rejected', 'cancelled'].includes(order.status)),
+    active: all.filter((order) => !['completed', 'cancelled'].includes(order.status) || isRecentlyCompleted(order)),
+    past: all.filter((order) => ['completed', 'quote_rejected', 'cancelled'].includes(order.status) && !isRecentlyCompleted(order)),
   };
 }
 

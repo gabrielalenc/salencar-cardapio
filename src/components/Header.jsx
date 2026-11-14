@@ -1,5 +1,5 @@
 import React, { useEffect, useRef, useState } from 'react';
-import { ChevronDown, LogIn, LogOut, Mail, ShieldCheck, ShoppingBag, UserRound } from 'lucide-react';
+import { ChevronDown, LogIn, LogOut, Mail, PackageCheck, ShieldCheck, ShoppingBag, UserRound } from 'lucide-react';
 import { useCart } from '../context/CartContext';
 import { useAuth } from '../context/AuthContext';
 import { useNotifications } from './Notifications';
@@ -35,8 +35,12 @@ export function Header({ onOpenAccount, onOpenOrders, onOpenTracking, onOpenAdmi
   const desktopAccountMenuRef = useRef(null);
   const mobileAccountMenuRef = useRef(null);
   const { totalCount, openCart } = useCart();
-  const { currentUser, authLoading, settings, logout } = useAuth();
+  const { currentUser, authLoading, settings, logout, orders = [] } = useAuth();
   const { confirm, notify } = useNotifications();
+  const hasActiveOrders = currentUser?.role === 'customer' && orders.some((order) => order.customerId === currentUser.id && (
+    !['completed', 'cancelled', 'quote_rejected'].includes(order.status)
+    || (order.status === 'completed' && order.completedAt && Date.now() < new Date(order.completedAt).getTime() + 5 * 60 * 1000)
+  ));
 
   useEffect(() => {
     if (!mobileMenuOpen) return undefined;
@@ -97,6 +101,7 @@ export function Header({ onOpenAccount, onOpenOrders, onOpenTracking, onOpenAdmi
   };
   const openTracking = () => {
     closeMobileMenu();
+    setAccountMenuOpen(false);
     onOpenTracking?.();
   };
   const openOrders = () => {
@@ -110,7 +115,7 @@ export function Header({ onOpenAccount, onOpenOrders, onOpenTracking, onOpenAdmi
   };
 
   return (
-    <header data-aos="fade-down" className="sticky top-0 z-30 border-b border-stone-200/80 bg-white shadow-subtle">
+    <header data-aos="fade-down" className="site-header sticky top-0 z-30 border-b border-stone-200/80 bg-white shadow-subtle">
       {/* Desktop navbar */}
       <div className="mx-auto hidden max-w-7xl items-center justify-between gap-2 px-3 py-3 sm:gap-4 sm:px-5 lg:flex lg:gap-5 lg:px-6">
         <button
@@ -132,7 +137,7 @@ export function Header({ onOpenAccount, onOpenOrders, onOpenTracking, onOpenAdmi
           <div className="flex items-center gap-1 rounded-2xl bg-stone-50 p-1 text-xs font-semibold text-stone-700 xl:text-sm">
             <a href="#cardapio" className="rounded-xl px-3 py-2.5 transition-colors hover:bg-white hover:text-primary hover:shadow-subtle xl:px-4">Cardápio</a>
             <a href="#localizacao" className="rounded-xl px-3 py-2.5 transition-colors hover:bg-white hover:text-primary hover:shadow-subtle xl:px-4">Localização</a>
-            {currentUser?.role === 'customer' && <button type="button" onClick={onOpenTracking} className="rounded-xl px-3 py-2.5 text-primary transition-colors hover:bg-white hover:shadow-subtle xl:px-4">Acompanhar pedido</button>}
+            {currentUser?.role !== 'admin' && <button type="button" disabled={authLoading} onClick={openTracking} className="rounded-xl px-3 py-2.5 text-primary transition-colors hover:bg-white hover:shadow-subtle disabled:cursor-wait disabled:opacity-50 xl:px-4">Acompanhar pedido</button>}
             {currentUser?.role === 'admin' && <button type="button" onClick={onOpenAdminPanel} className="rounded-xl px-3 py-2.5 text-primary transition-colors hover:bg-white hover:shadow-subtle xl:px-4">Administrador</button>}
           </div>
         </nav>
@@ -156,7 +161,7 @@ export function Header({ onOpenAccount, onOpenOrders, onOpenTracking, onOpenAdmi
           >
             <span className="relative flex h-8 w-8 shrink-0 items-center justify-center rounded-xl bg-primary text-white transition-colors group-hover:bg-primary-hover sm:h-10 sm:w-10">
               <ShoppingBag className="h-5 w-5" />
-              {totalCount > 0 && <span className="absolute -right-1.5 -top-1.5 flex h-[18px] min-w-[18px] items-center justify-center rounded-full border-2 border-white bg-accent px-0.5 text-[10px] font-bold text-white shadow-xs">{totalCount}</span>}
+              {totalCount > 0 && <span key={totalCount} className="cart-count-pop absolute -right-1.5 -top-1.5 flex h-[18px] min-w-[18px] items-center justify-center rounded-full border-2 border-white bg-accent px-0.5 text-[10px] font-bold text-white shadow-xs">{totalCount}</span>}
             </span>
             <span className="min-w-0 text-left text-xs font-bold sm:text-sm xl:min-w-24">
               <span className="block leading-tight"><span className="sm:hidden">Sacola</span><span className="hidden sm:inline">Meu Carrinho</span></span>
@@ -193,6 +198,7 @@ export function Header({ onOpenAccount, onOpenOrders, onOpenTracking, onOpenAdmi
           >
             <UserRound className="h-5 w-5" />
           </button>
+          {currentUser?.role !== 'admin' && <button type="button" disabled={authLoading} onClick={openTracking} aria-label="Pedidos" title="Pedidos" className="relative inline-flex h-10 items-center justify-center gap-1.5 rounded-xl border border-stone-200 bg-white px-2 text-primary shadow-subtle transition hover:border-primary/30 hover:bg-primary-light/40 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary focus-visible:ring-offset-2 disabled:cursor-wait disabled:opacity-50"><PackageCheck className="h-5 w-5" /><span className="text-[10px] font-semibold">Pedidos</span>{hasActiveOrders && <span aria-hidden="true" className="absolute -right-1 -top-1 h-2.5 w-2.5 rounded-full border-2 border-white bg-emerald-500" />}</button>}
           <button
             type="button"
             onClick={openCart}
@@ -200,7 +206,7 @@ export function Header({ onOpenAccount, onOpenOrders, onOpenTracking, onOpenAdmi
             aria-label={`Abrir carrinho${totalCount ? `, ${totalCount} ${totalCount === 1 ? 'produto' : 'produtos'}` : ', vazio'}`}
           >
             <ShoppingBag className="h-5 w-5" />
-            {totalCount > 0 && <span className="absolute -right-1 -top-1 flex h-[18px] min-w-[18px] items-center justify-center rounded-full border-2 border-white bg-accent px-0.5 text-[10px] font-bold text-white">{totalCount}</span>}
+            {totalCount > 0 && <span key={totalCount} className="cart-count-pop absolute -right-1 -top-1 flex h-[18px] min-w-[18px] items-center justify-center rounded-full border-2 border-white bg-accent px-0.5 text-[10px] font-bold text-white">{totalCount}</span>}
           </button>
           <button
             type="button"
@@ -231,7 +237,6 @@ export function Header({ onOpenAccount, onOpenOrders, onOpenTracking, onOpenAdmi
             <nav aria-label="Navegação principal mobile" className="grid gap-1">
               <a href="#cardapio" onClick={closeMobileMenu} className="flex min-h-11 items-center rounded-xl px-3 text-sm font-semibold text-stone-700 transition-colors hover:bg-stone-50 hover:text-primary">Cardápio</a>
               <a href="#localizacao" onClick={closeMobileMenu} className="flex min-h-11 items-center rounded-xl px-3 text-sm font-semibold text-stone-700 transition-colors hover:bg-stone-50 hover:text-primary">Localização</a>
-              {currentUser?.role === 'customer' && <button type="button" onClick={openTracking} className="flex min-h-11 items-center rounded-xl px-3 text-left text-sm font-semibold text-primary transition-colors hover:bg-primary-light/50">Acompanhar pedido</button>}
               {currentUser?.role === 'admin' && <button type="button" onClick={openAdminPanel} className="flex min-h-11 items-center rounded-xl px-3 text-left text-sm font-semibold text-primary transition-colors hover:bg-primary-light/50">Administrador</button>}
             </nav>
 

@@ -13,7 +13,7 @@ const OrderSuccessModal = lazy(() => import('./components/OrderSuccessModal').th
 import { MobileFloatingCart } from './components/MobileFloatingCart';
 import { Footer } from './components/Footer';
 import { PRODUCTS, CATEGORIES } from './data/products';
-import { Search, X } from 'lucide-react';
+import { LoaderCircle, Search, UserRound, X } from 'lucide-react';
 import { AnimatedText } from './components/AnimatedText';
 import { AuthProvider, useAuth } from './context/AuthContext';
 const AccountModal = lazy(() => import('./components/AccountModal').then((module) => ({ default: module.AccountModal })));
@@ -26,6 +26,11 @@ import { StartupSplash } from './components/StartupSplash';
 
 let aosInitialized = false;
 const STARTUP_SPLASH_MAX_MS = 2900;
+const PENDING_TRACKING_KEY = 'salencar_open_tracking_after_login_v1';
+
+function readPendingTrackingIntent() {
+  try { return sessionStorage.getItem(PENDING_TRACKING_KEY) === '1'; } catch { return false; }
+}
 
 class AdminPanelErrorBoundary extends React.Component {
   state = { hasError: false };
@@ -99,10 +104,22 @@ function DeliveryApp() {
   const [pendingSelection, setPendingSelection] = useState(null);
   const [pathname, setPathname] = useState(() => window.location.pathname.replace(/\/+$/, '') || '/');
   const [trackingOpen, setTrackingOpen] = useState(false);
+  const [resumeTrackingAfterLogin, setResumeTrackingAfterLogin] = useState(readPendingTrackingIntent);
+  const [cartDrawerMounted, setCartDrawerMounted] = useState(false);
   const { selectedProduct, isCartOpen, isCheckoutOpen, openProductDetails, closeProductDetails, addToCart, openCheckout, cartOwnerId } = useCart();
   const { currentUser, authLoading, passwordRecoveryPending, productSettings, inventory, stockAvailability, verifyCustomerSession } = useAuth();
   const { notify } = useNotifications();
   const menuSectionRef = useRef(null);
+
+  useEffect(() => {
+    if (isCartOpen) {
+      setCartDrawerMounted(true);
+      return undefined;
+    }
+    if (!cartDrawerMounted) return undefined;
+    const timeout = window.setTimeout(() => setCartDrawerMounted(false), 300);
+    return () => window.clearTimeout(timeout);
+  }, [isCartOpen, cartDrawerMounted]);
 
   const navigate = useCallback((path, { replace = false } = {}) => {
     if (replace) window.history.replaceState({}, '', path);
@@ -125,6 +142,31 @@ function DeliveryApp() {
     setAccountInitialView('history');
     setAccountOpen(true);
   }, [authLoading, currentUser?.role]);
+  const openTrackingFromNavigation = useCallback(() => {
+    if (authLoading || currentUser?.role === 'admin') return;
+    if (currentUser?.role === 'customer') {
+      setTrackingOpen(true);
+      return;
+    }
+    setResumeTrackingAfterLogin(true);
+    try { sessionStorage.setItem(PENDING_TRACKING_KEY, '1'); } catch { /* keep the intent in memory */ }
+    setAccountMode('login');
+    setAccountInitialView('account');
+    setAccountOpen(true);
+  }, [authLoading, currentUser?.role]);
+
+  useEffect(() => {
+    if (!resumeTrackingAfterLogin || authLoading) return;
+    if (currentUser?.role === 'customer') {
+      setResumeTrackingAfterLogin(false);
+      try { sessionStorage.removeItem(PENDING_TRACKING_KEY); } catch { /* session storage may be disabled */ }
+      setAccountOpen(false);
+      setTrackingOpen(true);
+    } else if (currentUser?.role === 'admin') {
+      setResumeTrackingAfterLogin(false);
+      try { sessionStorage.removeItem(PENDING_TRACKING_KEY); } catch { /* session storage may be disabled */ }
+    }
+  }, [resumeTrackingAfterLogin, authLoading, currentUser?.id, currentUser?.role]);
 
   useEffect(() => {
     const handlePopState = () => setPathname(window.location.pathname.replace(/\/+$/, '') || '/');
@@ -251,7 +293,9 @@ function DeliveryApp() {
     try {
       sessionStorage.removeItem(PENDING_SELECTION_KEY);
       sessionStorage.removeItem(PENDING_PURCHASE_KEY);
+      sessionStorage.removeItem(PENDING_TRACKING_KEY);
     } catch { /* storage may be disabled */ }
+    setResumeTrackingAfterLogin(false);
     setAccountOpen(false);
   };
 
@@ -387,7 +431,7 @@ function DeliveryApp() {
   return (
     <div className="min-h-screen flex flex-col bg-surface-50 text-ink font-sans selection:bg-primary selection:text-white">
       {/* Cabeçalho */}
-      <Header onOpenAccount={openAccountFromHeader} onOpenOrders={openOrdersFromHeader} onOpenTracking={() => setTrackingOpen(true)} onOpenAdminPanel={openAdminPanel} />
+      <Header onOpenAccount={openAccountFromHeader} onOpenOrders={openOrdersFromHeader} onOpenTracking={openTrackingFromNavigation} onOpenAdminPanel={openAdminPanel} />
 
       {/* Banner Principal com Selo Integrado Junto à Imagem */}
       <HeroBanner onExploreClick={scrollToMenu} />
@@ -493,11 +537,11 @@ function DeliveryApp() {
       <LocationContactSection />
 
       {/* Rodapé */}
-      <Footer onOpenTracking={() => setTrackingOpen(true)} onOpenAdminPanel={() => navigate('/admin')} />
+      <Footer onOpenTracking={openTrackingFromNavigation} onOpenAdminPanel={() => navigate('/admin')} />
 
       {/* Modais e Drawers Funcionais */}
       {selectedProduct && <Suspense fallback={null}><ProductModal onAddToCart={(product, base, extras, notes, quantity) => requestPurchase(product, 'cart', base, extras, notes, quantity)} /></Suspense>}
-      {isCartOpen && <Suspense fallback={null}><CartDrawer /></Suspense>}
+      {cartDrawerMounted && <Suspense fallback={null}><CartDrawer /></Suspense>}
       {isCheckoutOpen && <Suspense fallback={null}><CheckoutModal onOrderSuccess={(data) => setOrderSuccessData(data)} onRequestAuth={(mode) => { setAccountMode(mode); setAccountOpen(true); }} /></Suspense>}
       {orderSuccessData && <Suspense fallback={null}><OrderSuccessModal orderData={orderSuccessData} onClose={() => setOrderSuccessData(null)} /></Suspense>}
 
@@ -507,6 +551,110 @@ function DeliveryApp() {
       {accountOpen && <Suspense fallback={null}><AccountModal isOpen={accountOpen} initialMode={accountMode} initialView={accountInitialView} onClose={closeAccountModal} onDismiss={cancelAuthenticationFlow} onOpenAdminPanel={openAdminPanel} /></Suspense>}
       {trackingOpen && <Suspense fallback={null}><OrderTrackingModal isOpen={trackingOpen} onClose={() => setTrackingOpen(false)} /></Suspense>}
 
+    </div>
+  );
+}
+
+function GoogleDisplayNamePrompt() {
+  const { currentUser, needsDisplayNameSetup, displayNameSuggestion, updateCustomerProfile } = useAuth();
+  const { notify } = useNotifications();
+  const [name, setName] = useState(displayNameSuggestion || '');
+  const [error, setError] = useState('');
+  const [saving, setSaving] = useState(false);
+  const [viewport, setViewport] = useState({ top: 0, height: typeof window !== 'undefined' ? window.innerHeight : 800 });
+  const dialogRef = useRef(null);
+  const focusedFieldRef = useRef(null);
+
+  useEffect(() => {
+    if (needsDisplayNameSetup) setName(displayNameSuggestion || '');
+    else { setName(''); setError(''); setSaving(false); }
+  }, [needsDisplayNameSetup, displayNameSuggestion, currentUser?.id]);
+
+  useEffect(() => {
+    if (!needsDisplayNameSetup) return undefined;
+    const visualViewport = window.visualViewport;
+    let frame = 0;
+    const updateViewport = () => {
+      window.cancelAnimationFrame(frame);
+      frame = window.requestAnimationFrame(() => setViewport({ top: visualViewport?.offsetTop || 0, height: visualViewport?.height || window.innerHeight }));
+    };
+    updateViewport();
+    visualViewport?.addEventListener('resize', updateViewport);
+    visualViewport?.addEventListener('scroll', updateViewport);
+    window.addEventListener('resize', updateViewport);
+    return () => {
+      window.cancelAnimationFrame(frame);
+      visualViewport?.removeEventListener('resize', updateViewport);
+      visualViewport?.removeEventListener('scroll', updateViewport);
+      window.removeEventListener('resize', updateViewport);
+    };
+  }, [needsDisplayNameSetup]);
+
+  const scrollFocusedFieldIntoView = () => {
+    const field = focusedFieldRef.current;
+    const dialog = dialogRef.current;
+    if (!field || !dialog || document.activeElement !== field) return;
+    const fieldRect = field.getBoundingClientRect();
+    const dialogRect = dialog.getBoundingClientRect();
+    const inset = 12;
+    if (fieldRect.bottom > dialogRect.bottom - inset) dialog.scrollTop += fieldRect.bottom - dialogRect.bottom + inset;
+    else if (fieldRect.top < dialogRect.top + inset) dialog.scrollTop -= dialogRect.top + inset - fieldRect.top;
+  };
+
+  useEffect(() => {
+    if (!needsDisplayNameSetup) return undefined;
+    const frame = window.requestAnimationFrame(scrollFocusedFieldIntoView);
+    return () => window.cancelAnimationFrame(frame);
+  }, [needsDisplayNameSetup, viewport.height, viewport.top]);
+
+  const keepFocusedFieldVisible = (event) => {
+    if (!event.target.matches('input, textarea, select')) return;
+    focusedFieldRef.current = event.target;
+    window.requestAnimationFrame(scrollFocusedFieldIntoView);
+  };
+
+  if (!needsDisplayNameSetup || currentUser?.role !== 'customer') return null;
+
+  const saveName = async (event) => {
+    event.preventDefault();
+    const displayName = name.trim();
+    if (!displayName) { setError('Informe como podemos chamar você.'); return; }
+    if (displayName.length > 80) { setError('Use até 80 caracteres.'); return; }
+    setSaving(true);
+    setError('');
+    try {
+      const result = await updateCustomerProfile({ name: displayName });
+      if (!result.ok) {
+        setError(result.error);
+        return;
+      }
+      notify({ type: 'success', title: 'Nome salvo', message: 'Esse será o nome usado nos seus próximos pedidos.' });
+    } catch (cause) {
+      setError('Não foi possível salvar seu nome. Confira sua conexão e tente novamente.');
+      console.error('Supabase display name save failed:', cause);
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  return (
+    <div className="fixed inset-x-0 z-[90] flex flex-col items-center overflow-y-auto overscroll-contain bg-stone-950/55 p-2 backdrop-blur-sm sm:p-4" style={{ top: viewport.top, height: viewport.height, paddingTop: 'max(0.5rem, env(safe-area-inset-top))', paddingBottom: 'max(0.5rem, env(safe-area-inset-bottom))' }}>
+      <section ref={dialogRef} role="dialog" aria-modal="true" aria-labelledby="display-name-title" className="account-dialog display-name-dialog my-auto w-full max-w-md overflow-y-auto overscroll-contain rounded-3xl border border-stone-100 bg-white p-5 shadow-elevated sm:p-8" style={{ '--display-name-viewport-height': `${viewport.height}px` }} onFocusCapture={keepFocusedFieldVisible}>
+        <span className="mx-auto flex h-14 w-14 items-center justify-center rounded-2xl bg-primary-light text-primary"><UserRound className="h-6 w-6" /></span>
+        <h2 id="display-name-title" className="mt-5 text-center text-xl font-bold text-stone-900">Bem-vindo à Salencar!</h2>
+        <p className="mt-2 text-center text-sm text-stone-600">Como podemos chamar você?</p>
+        <form onSubmit={saveName} className="mt-6 space-y-4">
+          <label className="block">
+            <span className="mb-1.5 block text-xs font-medium text-stone-700">Seu nome de exibição</span>
+            <input autoComplete="name" maxLength={80} value={name} onChange={(event) => { setName(event.target.value); setError(''); }} className="min-h-12 w-full rounded-xl border border-stone-200 bg-white px-3.5 py-3 text-base text-stone-800 outline-none transition placeholder:text-stone-400 focus:border-primary/50 focus:ring-2 focus:ring-primary/10 sm:text-sm" placeholder="Digite como deseja ser chamado(a)" aria-invalid={Boolean(error)} aria-describedby={error ? 'display-name-error' : 'display-name-hint'} />
+            <span id={error ? 'display-name-error' : 'display-name-hint'} className={`mt-1.5 block text-xs ${error ? 'text-rose-600' : 'text-stone-400'}`} role={error ? 'alert' : undefined}>{error || 'Você pode editar a sugestão ou escolher outro nome.'}</span>
+          </label>
+          <button type="submit" disabled={saving || !name.trim()} className="inline-flex min-h-12 w-full items-center justify-center gap-2 rounded-xl bg-primary px-4 py-3 text-sm font-semibold text-white transition hover:bg-primary-hover disabled:cursor-not-allowed disabled:opacity-60">
+            {saving && <LoaderCircle className="h-4 w-4 animate-spin" />}
+            {saving ? 'Salvando...' : 'Continuar'}
+          </button>
+        </form>
+      </section>
     </div>
   );
 }
@@ -554,6 +702,7 @@ function StartupGate() {
   return (
     <>
       <DeliveryApp />
+      <GoogleDisplayNamePrompt />
       {!complete && <StartupSplash phase={phase} onTransitionEnd={() => setComplete(true)} />}
     </>
   );
