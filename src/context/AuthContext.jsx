@@ -115,7 +115,7 @@ function formatAddress(address = {}) {
   return [street, extra, address.postal_code ? `CEP ${address.postal_code}` : '', address.reference ? `Ref.: ${address.reference}` : ''].filter(Boolean).join(' — ');
 }
 function mapOrder(row) {
-  return { id: row.order_number, databaseId: row.id, customerId: row.customer_id, customerName: row.customer_name, customerEmail: row.customer_email, phone: row.phone, status: row.status, completedAt: row.completed_at || null, subtotal: Number(row.subtotal), deliveryFee: Number(row.delivery_fee), deliveryQuote: row.delivery_quote == null ? null : Number(row.delivery_quote), deliveryQuoteAt: row.delivery_quote_at, deliveryQuoteBy: row.delivery_quote_by, deliveryQuoteResponse: row.delivery_quote_response, deliveryQuoteRespondedAt: row.delivery_quote_responded_at, total: Number(row.total), deliveryType: row.delivery_type, address: formatAddress(row.address_snapshot), addressSnapshot: row.address_snapshot, paymentMethod: paymentLabel(row.payment_method), paymentMethodId: row.payment_method, orderNotes: row.order_notes, createdAt: row.created_at, updatedAt: row.updated_at, items: (row.order_items || []).map((item) => ({ productId: item.product_id, productName: item.product_name, productImage: item.product_image, baseId: item.base_id, option: item.option, extras: item.extras || [], quantity: item.quantity, unitPrice: Number(item.unit_price), totalPrice: Number(item.total_price) })) };
+  return { id: row.order_number, databaseId: row.id, customerId: row.customer_id, customerName: row.customer_name, customerEmail: row.customer_email, phone: row.phone, status: row.status, completedAt: row.completed_at || null, subtotal: Number(row.subtotal), deliveryFee: Number(row.delivery_fee), deliveryQuote: row.delivery_quote == null ? null : Number(row.delivery_quote), deliveryQuoteAt: row.delivery_quote_at, deliveryQuoteBy: row.delivery_quote_by, deliveryQuoteSentAt: row.delivery_quote_sent_at || null, deliveryQuoteSentBy: row.delivery_quote_sent_by || null, deliveryQuoteResponse: row.delivery_quote_response, deliveryQuoteRespondedAt: row.delivery_quote_responded_at, total: Number(row.total), deliveryType: row.delivery_type, address: formatAddress(row.address_snapshot), addressSnapshot: row.address_snapshot, paymentMethod: paymentLabel(row.payment_method), paymentMethodId: row.payment_method, orderNotes: row.order_notes, createdAt: row.created_at, updatedAt: row.updated_at, items: (row.order_items || []).map((item) => ({ productId: item.product_id, productName: item.product_name, productImage: item.product_image, baseId: item.base_id, option: item.option, extras: item.extras || [], quantity: item.quantity, unitPrice: Number(item.unit_price), totalPrice: Number(item.total_price) })) };
 }
 
 export function AuthProvider({ children }) {
@@ -360,7 +360,7 @@ export function AuthProvider({ children }) {
     if (!currentUser || !supabase) return undefined;
     const channel = supabase.channel(`salencar-orders-${currentUser.id}`).on('postgres_changes', { event: '*', schema: 'public', table: 'orders' }, refreshOrders).subscribe();
     return () => { supabase.removeChannel(channel); };
-  }, [currentUser?.id, refreshOrders]);
+  }, [currentUser?.id, currentUser?.role, refreshOrders]);
 
   const login = useCallback(async (email, password) => {
     if (!supabase) return { ok: false, error: getSupabaseConfigError() };
@@ -564,11 +564,24 @@ export function AuthProvider({ children }) {
 
   const saveDeliveryQuote = useCallback(async (orderId, deliveryQuote) => {
     if (!currentUser || currentUser.role !== 'admin') return { ok: false, error: 'Somente administradores podem salvar cotações.' };
+    if (!supabase) return { ok: false, error: getSupabaseConfigError() };
     const { data, error } = await supabase.rpc('save_delivery_quote', { p_order_id: orderId, p_delivery_quote: deliveryQuote });
     if (error) return { ok: false, error: error.message };
     await refreshOrders();
     return { ok: true, quote: data };
-  }, [currentUser?.id, refreshOrders]);
+  }, [currentUser?.id, currentUser?.role, refreshOrders]);
+
+  const markDeliveryQuoteSent = useCallback(async (orderId) => {
+    if (!currentUser || currentUser.role !== 'admin') return { ok: false, error: 'Somente administradores podem confirmar o envio da cotação.' };
+    if (!supabase) return { ok: false, error: getSupabaseConfigError() };
+    const { data, error } = await supabase.rpc('mark_delivery_quote_sent', { p_order_id: orderId });
+    if (error) {
+      const migrationMissing = ['PGRST202', '42883'].includes(error.code);
+      return { ok: false, error: migrationMissing ? 'Aplique supabase/migrations/20261115120000_delivery_quote_send_confirmation.sql no Supabase.' : error.message };
+    }
+    await refreshOrders();
+    return { ok: true, quote: data };
+  }, [currentUser?.id, currentUser?.role, refreshOrders]);
 
   const respondToDeliveryQuote = useCallback(async (orderId, accept) => {
     if (!currentUser || currentUser.role !== 'customer') return { ok: false, error: 'Entre na conta do cliente que realizou este pedido.' };
@@ -651,7 +664,7 @@ const updateProductSetting = useCallback(async (productId, changes) => {
     return { ok: true };
   }, [currentUser?.role]);
 const updateStoreSettings = useCallback((changes) => setSettings((previous) => ({ ...previous, ...changes, pix: changes.pix ? { ...previous.pix, ...changes.pix } : previous.pix, status: changes.status ? { ...previous.status, ...changes.status } : previous.status })), []);
-  const value = useMemo(() => ({ users, currentUser, needsDisplayNameSetup, displayNameSuggestion, authLoading, authError, passwordRecoveryPending, addresses, paymentPreference, orders, ordersLoading, ordersError, refreshOrders, customersLoading, customersError, refreshCustomers, productSettings, catalogLoading, catalogError, costsError, refreshCatalog, settings, inventory, inventoryLoading, inventoryError, refreshAdminInventory, login, loginAdmin, verifyAdminAuthorization, verifyCustomerSession, register, verifyEmailCode, resendSignupCode, resetPassword, verifyRecoveryCode, updatePassword, loginWithGoogle, logout, recordOrder, updateOrderStatus, saveDeliveryQuote, respondToDeliveryQuote, updateProductSetting, updateStoreSettings, updateInventorySettings, updateFlavorStock, stockAvailability, canFulfillItems, updateCustomerProfile, saveAddress, deleteAddress, savePaymentPreference }), [users, currentUser, needsDisplayNameSetup, displayNameSuggestion, authLoading, authError, passwordRecoveryPending, addresses, paymentPreference, orders, ordersLoading, ordersError, refreshOrders, customersLoading, customersError, refreshCustomers, productSettings, catalogLoading, catalogError, costsError, refreshCatalog, settings, inventory, inventoryLoading, inventoryError, refreshAdminInventory, login, loginAdmin, verifyAdminAuthorization, verifyCustomerSession, register, verifyEmailCode, resendSignupCode, resetPassword, verifyRecoveryCode, updatePassword, loginWithGoogle, logout, recordOrder, updateOrderStatus, saveDeliveryQuote, respondToDeliveryQuote, updateProductSetting, updateStoreSettings, updateInventorySettings, updateFlavorStock, stockAvailability, canFulfillItems, updateCustomerProfile, saveAddress, deleteAddress, savePaymentPreference]);
+  const value = useMemo(() => ({ users, currentUser, needsDisplayNameSetup, displayNameSuggestion, authLoading, authError, passwordRecoveryPending, addresses, paymentPreference, orders, ordersLoading, ordersError, refreshOrders, customersLoading, customersError, refreshCustomers, productSettings, catalogLoading, catalogError, costsError, refreshCatalog, settings, inventory, inventoryLoading, inventoryError, refreshAdminInventory, login, loginAdmin, verifyAdminAuthorization, verifyCustomerSession, register, verifyEmailCode, resendSignupCode, resetPassword, verifyRecoveryCode, updatePassword, loginWithGoogle, logout, recordOrder, updateOrderStatus, saveDeliveryQuote, markDeliveryQuoteSent, respondToDeliveryQuote, updateProductSetting, updateStoreSettings, updateInventorySettings, updateFlavorStock, stockAvailability, canFulfillItems, updateCustomerProfile, saveAddress, deleteAddress, savePaymentPreference }), [users, currentUser, needsDisplayNameSetup, displayNameSuggestion, authLoading, authError, passwordRecoveryPending, addresses, paymentPreference, orders, ordersLoading, ordersError, refreshOrders, customersLoading, customersError, refreshCustomers, productSettings, catalogLoading, catalogError, costsError, refreshCatalog, settings, inventory, inventoryLoading, inventoryError, refreshAdminInventory, login, loginAdmin, verifyAdminAuthorization, verifyCustomerSession, register, verifyEmailCode, resendSignupCode, resetPassword, verifyRecoveryCode, updatePassword, loginWithGoogle, logout, recordOrder, updateOrderStatus, saveDeliveryQuote, markDeliveryQuoteSent, respondToDeliveryQuote, updateProductSetting, updateStoreSettings, updateInventorySettings, updateFlavorStock, stockAvailability, canFulfillItems, updateCustomerProfile, saveAddress, deleteAddress, savePaymentPreference]);
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;
 }
 

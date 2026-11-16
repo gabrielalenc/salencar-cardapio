@@ -25,6 +25,7 @@ const PERIODS = [
 ];
 const STATUSES = [
   { id: 'awaiting_delivery_quote', label: 'Aguardando cotação de entrega' },
+  { id: 'delivery_quote_ready', label: 'Cotação realizada · aguardando envio' },
   { id: 'awaiting_customer_approval', label: 'Aguardando aprovação do cliente' },
   { id: 'confirmed', label: 'Pedido confirmado' }, { id: 'new', label: 'Aguardando confirmação' },
   { id: 'preparing', label: 'Em preparação' }, { id: 'out_for_delivery', label: 'Saiu para entrega' },
@@ -33,6 +34,7 @@ const STATUSES = [
 ];
 const STATUS_STYLE = {
   awaiting_delivery_quote: 'bg-amber-50 text-amber-800',
+  delivery_quote_ready: 'bg-amber-50 text-amber-800',
   awaiting_customer_approval: 'bg-sky-50 text-sky-800',
   confirmed: 'bg-emerald-50 text-emerald-700',
   quote_rejected: 'bg-rose-50 text-rose-700',
@@ -173,7 +175,7 @@ export function AdminPanel({ onClose }) {
         customerName: profileById.get(review.customer_id)?.display_name || profileById.get(review.customer_id)?.full_name || orderById.get(review.order_id)?.customer_name || 'Cliente',
       })));
     } catch (error) {
-      setReviewsError('Não foi possível carregar as avaliações. Verifique se a migration correspondente foi aplicada.');
+      setReviewsError('Não foi possível carregar confirmações e avaliações. Aplique supabase/migrations/20261113140000_order_delivery_confirmation_reviews.sql no Supabase após as migrations anteriores.');
       console.error('Admin reviews load failed:', { code: error.code, message: error.message });
     } finally { setReviewsLoading(false); }
   }, []);
@@ -291,6 +293,11 @@ export function AdminPanel({ onClose }) {
   }, [activeOrders, cutoff, currentPeriod.days]);
 
   const setOrderStatus = async (order, status) => {
+    if (order.deliveryType === 'delivery' && status !== order.status && ['awaiting_delivery_quote', 'delivery_quote_ready', 'awaiting_customer_approval', 'confirmed'].includes(status)) {
+      setFeedback('As etapas da cotação e da confirmação do cliente são atualizadas pelo fluxo seguro do pedido.');
+      window.setTimeout(() => setFeedback(''), 3200);
+      return;
+    }
     const result = await updateOrderStatus(order.id, status);
     if (!result?.ok) { setFeedback(result?.error || 'Não foi possível atualizar o pedido.'); window.setTimeout(() => setFeedback(''), 3200); return; }
     if (selectedOrder?.id === order.id) setSelectedOrder({ ...order, status });

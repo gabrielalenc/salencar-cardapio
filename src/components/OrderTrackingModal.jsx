@@ -15,7 +15,7 @@ const STEPS = [
 ];
 
 const dateTime = (value) => value ? new Date(value).toLocaleString('pt-BR', { dateStyle: 'short', timeStyle: 'short' }) : '—';
-const schemaError = 'Não foi possível carregar confirmações e avaliações. A loja precisa aplicar a migration de avaliações no Supabase.';
+const schemaError = 'Não foi possível carregar confirmações e avaliações. A loja precisa aplicar supabase/migrations/20261113140000_order_delivery_confirmation_reviews.sql no Supabase após as migrations anteriores.';
 
 function ReviewExperience({ order, receipt, review, onConfirm, onSubmitReview }) {
   const [rating, setRating] = useState(0);
@@ -82,8 +82,9 @@ function ReviewExperience({ order, receipt, review, onConfirm, onSubmitReview })
 function TrackingCard({ order, receipt, review, onConfirm, onSubmitReview }) {
   const cancelled = order.status === 'cancelled';
   const stage = ({ confirmed: 0, preparing: 1, out_for_delivery: 2, completed: 3 })[order.status] ?? -1;
-  const statusLabel = customerOrderStatus(order.status);
-  const statusMessage = cancelled ? 'Este pedido foi cancelado.' : order.status === 'awaiting_delivery_quote' ? 'A loja está consultando o valor da entrega.' : order.status === 'awaiting_customer_approval' ? 'Revise a cotação e responda antes da confirmação.' : order.status === 'quote_rejected' ? 'A cotação foi recusada.' : order.status === 'new' ? 'Pedido legado aguardando atualização.' : STEPS[stage]?.detail || 'Consulte esta página para acompanhar as próximas etapas.';
+  const quoteNotSent = order.deliveryType === 'delivery' && order.deliveryQuote != null && !order.deliveryQuoteSentAt && ['delivery_quote_ready', 'awaiting_customer_approval'].includes(order.status);
+  const statusLabel = quoteNotSent ? 'Cotação realizada · aguardando envio' : customerOrderStatus(order.status);
+  const statusMessage = cancelled ? 'Este pedido foi cancelado.' : order.status === 'awaiting_delivery_quote' ? 'A loja está consultando o valor da entrega.' : quoteNotSent ? 'A loja está preparando o envio da cotação. Você poderá responder quando a mensagem for enviada.' : order.status === 'awaiting_customer_approval' ? 'Revise a cotação e responda antes da confirmação.' : order.status === 'quote_rejected' ? 'A cotação foi recusada.' : order.status === 'new' ? 'Pedido legado aguardando atualização.' : STEPS[stage]?.detail || 'Consulte esta página para acompanhar as próximas etapas.';
 
   return <article className="min-w-0 rounded-2xl border border-stone-200 bg-white p-4 shadow-subtle sm:p-5">
     <header className="flex flex-wrap items-start justify-between gap-3">

@@ -27,9 +27,10 @@ export function CustomerQuotePanel({ order }) {
   };
 
   if (order.status === 'awaiting_delivery_quote') return <div className="mt-3 rounded-xl border border-amber-200 bg-amber-50 p-3 text-xs leading-relaxed text-amber-900"><p className="font-semibold">Entrega aguardando cotação</p><p className="mt-1">A loja calculará o valor e enviará para você aprovar. O subtotal atual não inclui a entrega.</p></div>;
+  if (order.status === 'delivery_quote_ready' || (order.status === 'awaiting_customer_approval' && !order.deliveryQuoteSentAt)) return <div className="mt-3 rounded-xl border border-sky-200 bg-sky-50 p-3 text-xs leading-relaxed text-sky-900"><p className="font-semibold">Cotação realizada</p><p className="mt-1">A loja está preparando o envio da cotação. Você poderá revisar o total e responder assim que ela for enviada.</p></div>;
   if (order.deliveryQuote == null) return null;
 
-  const pending = order.status === 'awaiting_customer_approval';
+  const pending = order.status === 'awaiting_customer_approval' && Boolean(order.deliveryQuoteSentAt);
   return <section className="mt-3 rounded-xl border border-primary/15 bg-primary-light/45 p-3.5">
     <div className="flex items-center gap-2 text-xs font-bold text-primary"><MessageCircle className="h-4 w-4" />CotaÃ§Ã£o de entrega</div>
     <dl className="mt-3 space-y-1.5 text-xs"><div className="flex justify-between gap-3 text-stone-600"><dt>Produtos</dt><dd>{formatCurrency(order.subtotal)}</dd></div><div className="flex justify-between gap-3 text-stone-600"><dt>Entrega</dt><dd>{formatCurrency(order.deliveryQuote)}</dd></div><div className="flex justify-between gap-3 border-t border-primary/10 pt-2 font-bold text-stone-900"><dt>Total final</dt><dd className="text-primary">{formatCurrency(order.total)}</dd></div></dl>

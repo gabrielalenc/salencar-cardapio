@@ -6,8 +6,8 @@ O frontend usa Supabase Auth e tabelas protegidas por RLS para perfis, endereço
 
 1. Crie um projeto no [Supabase](https://supabase.com/dashboard).
 2. Abra **SQL Editor → New query**, cole o conteúdo de `supabase/migrations/20261107000000_customer_accounts_orders.sql` e execute.
-3. Execute também, nesta ordem, `supabase/migrations/20261107120000_ensure_customer_profile.sql`, `supabase/migrations/20261107130000_admin_access_hardening.sql`, `supabase/migrations/20261107150000_delivery_quote_flow.sql`, `supabase/migrations/20261110160000_authoritative_catalog_orders.sql` e `supabase/migrations/20261111120000_admin_dashboard_inventory.sql`, `supabase/migrations/20261113120000_order_idempotency_and_availability.sql` e, por fim, `supabase/migrations/20261113130000_customer_display_name.sql`.
-4. Confira em **Table Editor** se foram criadas `profiles`, `addresses`, `customer_preferences`, `catalog_products`, `inventory_settings`, `inventory_items`, `orders` e `order_items` e se RLS está ativa.
+3. Execute também, nesta ordem, `supabase/migrations/20261107120000_ensure_customer_profile.sql`, `supabase/migrations/20261107130000_admin_access_hardening.sql`, `supabase/migrations/20261107150000_delivery_quote_flow.sql`, `supabase/migrations/20261110160000_authoritative_catalog_orders.sql`, `supabase/migrations/20261111120000_admin_dashboard_inventory.sql`, `supabase/migrations/20261113120000_order_idempotency_and_availability.sql`, `supabase/migrations/20261113130000_customer_display_name.sql`, `supabase/migrations/20261113140000_order_delivery_confirmation_reviews.sql` e `supabase/migrations/20261115120000_delivery_quote_send_confirmation.sql`.
+4. Confira em **Table Editor** se foram criadas `profiles`, `addresses`, `customer_preferences`, `catalog_products`, `inventory_settings`, `inventory_items`, `orders`, `order_items`, `order_delivery_confirmations`, `order_reviews` e `order_delivery_quote_history` e se RLS está ativa nas tabelas protegidas.
 
 Se a migration base já foi aplicada no projeto, não a execute novamente; aplique apenas as migrations posteriores que ainda não constarem no histórico do Supabase.
 
@@ -18,6 +18,10 @@ A migration `20261111120000_admin_dashboard_inventory.sql` adiciona custo privad
 Aplique `20261113120000_order_idempotency_and_availability.sql` depois das migrations de catálogo e estoque. Ela habilita a RPC de checkout idempotente e deve estar aplicada antes da versão atual do frontend.
 
 A migration `20261113130000_customer_display_name.sql` adiciona `profiles.display_name`, separado do nome sincronizado pelo provedor OAuth. O valor escolhido pelo cliente prevalece no perfil, na lista administrativa de clientes, no checkout e nos pedidos futuros. A coluna segue a política RLS de atualização do próprio perfil e não permite que o cliente altere seu papel. Aplique-a após as migrations anteriores e confirme a existência da coluna no Table Editor.
+
+A migration `20261113140000_order_delivery_confirmation_reviews.sql` cria as tabelas de confirmação de entrega e avaliação, seus índices, políticas RLS e o registro seguro de conclusão dos pedidos. Aplique-a para habilitar a confirmação de recebimento e as avaliações no acompanhamento do cliente e no painel administrativo.
+
+A migration `20261115120000_delivery_quote_send_confirmation.sql` adiciona o estado de cotação realizada, o histórico de revisões e o registro de confirmação manual do envio. Salvar uma cotação não libera a aprovação do cliente; o administrador deve enviar a mensagem e confirmar o envio no painel. Abrir o WhatsApp não altera o status. Os valores continuam sendo gravados por funções protegidas que verificam a função administrativa, e o cliente só pode responder à cotação enviada do próprio pedido.
 ## 2. Criar a conta administrativa
 
 Crie seu usuário administrativo em **Authentication → Users**, com seu próprio e-mail, senha forte e e-mail confirmado. A migration de hardening remove a promoção por e-mail da versão antiga; depois de executá-la, copie o UUID do administrador e execute a concessão manual abaixo no SQL Editor como operador do projeto:

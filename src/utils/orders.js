@@ -1,6 +1,7 @@
 export const CUSTOMER_ORDER_STATUS = {
   new: 'Pedido legado',
   awaiting_delivery_quote: 'Aguardando cotação de entrega',
+  delivery_quote_ready: 'Cotação realizada · aguardando envio',
   awaiting_customer_approval: 'Aguardando aprovação do cliente',
   confirmed: 'Pedido confirmado',
   preparing: 'Em preparação',
