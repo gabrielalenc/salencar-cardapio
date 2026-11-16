@@ -21,7 +21,8 @@ const AdminPanel = lazy(() => import('./components/AdminPanel').then((module) =>
 const AdminLogin = lazy(() => import('./components/AdminLogin').then((module) => ({ default: module.AdminLogin })));
 const OrderTrackingModal = lazy(() => import('./components/OrderTrackingModal').then((module) => ({ default: module.OrderTrackingModal })));
 import { NotificationProvider, useNotifications } from './components/Notifications';
-import { createPurchaseIntent, createSelectionIntent, hasVerifiedCustomerSession, PENDING_PURCHASE_KEY, PENDING_SELECTION_KEY, requiresCustomerAccount } from './utils/purchaseAccess';
+import { createPurchaseIntent, createSelectionIntent, hasVerifiedCustomerSession, PENDING_PURCHASE_KEY, PENDING_SELECTION_KEY } from './utils/purchaseAccess';
+import { isAuthenticatedCartOwner } from './utils/cartAccess';
 import { StartupSplash } from './components/StartupSplash';
 
 let aosInitialized = false;
@@ -299,8 +300,13 @@ function DeliveryApp() {
     setAccountOpen(false);
   };
 
+  useEffect(() => {
+    if (currentUser?.role !== 'admin') return;
+    try { sessionStorage.removeItem(PENDING_PURCHASE_KEY); } catch { /* pending purchase is session-local */ }
+  }, [currentUser?.id, currentUser?.role]);
+
   const completePurchase = useCallback((intent) => {
-    if (requiresCustomerAccount(currentUser) || cartOwnerId !== currentUser.id) return false;
+    if (!isAuthenticatedCartOwner(currentUser, cartOwnerId, authLoading)) return false;
     const product = activeProducts.find((item) => item.id === intent.productId);
     if (!product || product.available === false) {
       notify({ type: 'error', title: 'Produto indisponível', message: 'Confira o cardápio e tente novamente.' });
@@ -327,18 +333,26 @@ function DeliveryApp() {
     setAccountOpen(false);
     if (intent.action === 'checkout') openCheckout();
     return true;
-  }, [currentUser, cartOwnerId, activeProducts, inventory, stockAvailability, addToCart, openCheckout, notify]);
+  }, [currentUser, authLoading, cartOwnerId, activeProducts, inventory, stockAvailability, addToCart, openCheckout, notify]);
 
   const requestPurchase = (product, action = 'cart', base = null, extras = [], notes = '', quantity = 1) => {
     const intent = createPurchaseIntent(product, action, base, extras, notes, quantity);
-    if (!requiresCustomerAccount(currentUser) && cartOwnerId === currentUser.id) {
-      completePurchase(intent);
+    if (authLoading) return;
+    if (currentUser?.role === 'customer') {
+      if (cartOwnerId === currentUser.id) completePurchase(intent);
+      else {
+        try { sessionStorage.setItem(PENDING_PURCHASE_KEY, JSON.stringify(intent)); } catch { /* retry after cart hydration */ }
+      }
+      return;
+    }
+    if (currentUser?.role === 'admin') {
+      notify({ type: 'info', title: 'Entre em uma conta de cliente', message: 'A sacola está disponível para contas de cliente.' });
       return;
     }
     try { sessionStorage.setItem(PENDING_PURCHASE_KEY, JSON.stringify(intent)); } catch {
-      notify({ type: 'error', title: 'Nao foi possÃ­vel continuar', message: 'Ative o armazenamento da sessao e tente novamente.' });
-      return;
+      notify({ type: 'error', title: 'Não foi possível continuar', message: 'Ative o armazenamento da sessão e tente novamente.' });
     }
+    notify({ type: 'info', title: 'Entre na sua conta', message: 'Você precisa entrar na sua conta para adicionar produtos ao carrinho.' });
     setAccountMode('login');
     setAccountOpen(true);
   };

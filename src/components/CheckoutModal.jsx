@@ -247,7 +247,7 @@ export function CheckoutModal({ onOrderSuccess, onRequestAuth }) {
       if (whatsappWindow) whatsappWindow.location.href = whatsappUrl;
       onOrderSuccess?.({ customer: savedOrder.customerName, phone: formData.phone, items: [...items], subtotal, total, deliveryType, whatsappUrl, message, paymentMethod: formData.paymentMethod, orderId: savedOrder.id });
       notify({ type: 'success', title: 'Pedido registrado', message: deliveryType === 'delivery' ? 'A loja vai calcular a entrega e enviar o valor para sua aprovação.' : 'Seu pedido foi enviado para a loja.' });
-      clearCart();
+      await clearCart();
       closeCheckout();
     } catch (err) {
       whatsappWindow?.close();
